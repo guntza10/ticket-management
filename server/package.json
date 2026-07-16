@@ -5,16 +5,23 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "dev": "node --watch src/index.ts",
-    "start": "node src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "dev": "node --watch --env-file-if-exists=.env src/index.ts",
+    "start": "node --env-file-if-exists=.env src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^24.13.2",
+    "prisma": "^7.8.0",
     "typescript": "~6.0.2"
   }
 }

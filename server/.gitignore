@@ -3,3 +3,6 @@ dist
 .env
 .env.local
 *.log
+
+# Prisma generated client (run `npm run db:generate` to recreate)
+src/generated

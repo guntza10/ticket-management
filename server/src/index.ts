@@ -1,4 +1,5 @@
 import express from "express";
+import prisma from "./db.ts";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -11,6 +12,18 @@ app.get("/", (_req, res) => {
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Proves the app is connected to the database.
+app.get("/db/health", async (_req, res) => {
+  try {
+    const tickets = await prisma.ticket.count();
+    res.json({ database: "connected", tickets });
+  } catch (err) {
+    res
+      .status(500)
+      .json({ database: "error", message: (err as Error).message });
+  }
 });
 
 app.listen(PORT, () => {
