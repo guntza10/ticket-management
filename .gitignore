@@ -1,0 +1,25 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+build
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# Claude Code local settings (personal, not shared)
+.claude/settings.local.json
+
+# Agent skills content — restored via skills-lock.json + `npx skills`
+.agents/
+.claude/skills/
