@@ -20,6 +20,5 @@ npm-debug.log*
 # Claude Code local settings (personal, not shared)
 .claude/settings.local.json
 
-# Agent skills content — restored via skills-lock.json + `npx skills`
+# Agent skills source store — vendored copies in .claude/skills/ are committed
 .agents/
-.claude/skills/
