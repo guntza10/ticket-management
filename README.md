@@ -13,7 +13,7 @@ ticket-management/
 
 ## Prerequisites
 
-- Node.js 20+ (developed on Node 24)
+- Node.js 24+ — the server runs TypeScript natively (type stripping), no build step
 - npm 10+
 
 ## Setup
@@ -35,7 +35,7 @@ Health check: `GET http://localhost:3000/health`
 
 | Script | Description |
 | --- | --- |
-| `npm run dev:server` | Run the API in watch mode (tsx) |
+| `npm run dev:server` | Run the API in watch mode (`node --watch`, native TS) |
 | `npm run dev:client` | Run the Vite dev server |
 | `npm run build:client` | Type-check + build the client |
 | `npm run typecheck:server` | Type-check the server |
