@@ -58,7 +58,7 @@ Ports: server **3000**, client **5173**. (They are not wired together yet.)
 ## Workflow
 
 - Built **one phase per session** (phases are defined in the implementation plan).
-- Branch: `main`. Commits: short imperative subject + a body explaining *why*.
+- Branch: `main`. Commits follow **Conventional Commits**: `type: imperative subject` (≤50 chars, no trailing period), a blank line, then a body wrapped at ~72 cols explaining *why*. Types in use: `feat`, `fix`, `docs`, `chore`, `build`, `refactor`, `test`. End the body with the `Co-Authored-By` trailer.
 - Keep this file current: add conventions as they become real (not speculative), and split into `client/CLAUDE.md` / `server/CLAUDE.md` once a workspace's rules outgrow the root.
 
 ## Status
