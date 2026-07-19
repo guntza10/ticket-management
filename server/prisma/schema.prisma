@@ -24,12 +24,20 @@ model Ticket {
   @@map("ticket")
 }
 
+// Role is hand-managed (a real Postgres enum). Do NOT re-run `better-auth
+// generate` — it would rewrite `role` as a String and drop this enum.
+enum Role {
+  agent
+  admin
+}
+
 model User {
   id            String    @id
   name          String
   email         String
   emailVerified Boolean   @default(false)
   image         String?
+  role          Role      @default(agent)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
