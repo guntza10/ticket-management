@@ -7,6 +7,7 @@
 - **401 vs 403:** 401 = "ไม่รู้ว่าคุณเป็นใคร" (ยังไม่ login/session หมด) · 403 = "รู้ว่าใคร แต่ role ไม่พอ" — **เจอ 403 = ผ่าน AuthN มาแล้วเสมอ** · ตกด่านไหนก่อนได้รหัสด่านนั้น
 - **Session strategy:** **A) Server-side** — ความจริงที่ server, cookie มีแค่ id, ค้น DB ทุก request → ยกเลิกทันทีได้/เห็นข้อมูลล่าสุด · **B) JWT** — ความจริงในตัว token, ตรวจ signature ไม่ค้น DB → เร็ว/scale ง่าย แต่ **ยกเลิกทันทีไม่ได้ + ข้อมูล stale** (เห็นแค่ snapshot ตอน login)
 - **โปรเจกต์นี้:** server เดียว + ต้อง ban/ถอนสิทธิ์ทันที → **server-side session** (default ของ better-auth)
+- **Cookie security** (HttpOnly/XSS, SameSite/CSRF): แยกเป็นไฟล์ → [cookie-security.md](cookie-security.md)
 
 ---
 
@@ -117,6 +118,10 @@ request เข้ามา
 
 > JWT ในโลกจริงจึงมักใช้ **access token อายุสั้นมาก (เช่น 15 นาที) + refresh token อายุยาว**
 > เพื่อลดช่องโหว่ revocation/stale
+
+---
+
+> 🔐 **Cookie security** (HttpOnly/XSS, SameSite/CSRF) แยกไปไฟล์ [Cookie security](cookie-security.md)
 
 ---
 
