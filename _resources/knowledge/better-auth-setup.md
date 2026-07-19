@@ -3,6 +3,7 @@
 โครงโค้ด auth ที่ set up ใน server (email/password + database session).
 ต่อยอดจาก [Authentication, Session & Authorization](authentication-and-authorization.md)
 และ [Cookie security](cookie-security.md). อยากรู้ว่า *ทำไม*เลือก Better Auth → [Better Auth คืออะไร & ทำไมต้องใช้](why-better-auth.md).
+ชั้นถัดไป (ปิด sign-up + role + seed) → [Auth — lock down sign-up, role enum & admin seed](auth-roles-and-seeding.md).
 
 ## TL;DR (อ่านทวนเร็ว)
 
@@ -88,6 +89,26 @@ export async function requireAuth(req, res, next) {
 - `!session` → **401** + `return` (ไม่ `next()`); มี → แปะ `res.locals.session` แล้ว `next()`
 - ใช้ `res.locals` (พื้นที่ต่อ 1 request) เลี่ยงการ augment type ของ `Request`
 - **ทำไม ban ได้ทันที:** getSession ค้น DB จริงทุกครั้ง → admin ลบ session row = request ถัดไปค้นไม่เจอ = 401 (ข้อได้เปรียบของ server-side session เหนือ JWT)
+
+---
+
+## `getSession()` คืนอะไร — object `{ session, user }`
+
+`getSession` (ใน require-auth / `/api/me`) คืน object **2 ส่วน** — เอา row จาก 2 ตารางมาประกอบให้โค้ดใช้ที่เดียว:
+```json
+{
+  "session": { "id", "token", "expiresAt", "userId", "ipAddress", "userAgent" },
+  "user":    { "id", "name", "email", "emailVerified", "image", "role", "createdAt", "updatedAt" }
+}
+```
+| ส่วน | คือ | มาจากตาราง |
+|---|---|---|
+| `session` | ข้อมูลการ login ครั้งนี้ (token, `expiresAt`) | `session` |
+| `user` | ข้อมูลคนที่ login (email, `role`, ...) | `user` |
+
+- เป็น **ตัวแทน in-memory ของ row ใน DB** ที่ BA หยิบมาให้โค้ด — โค้ดเราจับก้อนนี้ ไม่ใช่ตาราง
+- require-auth ทำ `res.locals.session = <ก้อนนี้>` → `/api/me` คืนมันออกไป → เราเห็น `user.role`
+- **BA ใส่เฉพาะ field ที่รู้จัก** ใน `user`: default = `id, name, email, emailVerified, image, createdAt, updatedAt`; field เสริม (เช่น `role`) ต้องประกาศผ่าน `additionalFields` (ดู [Auth roles & seeding](auth-roles-and-seeding.md))
 
 ---
 
