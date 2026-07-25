@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router";
+import { NavLink, useNavigate } from "react-router";
 import { signOut, useSession } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 
@@ -15,7 +15,23 @@ export default function NavBar() {
   return (
     <header className="border-b bg-background">
       <nav className="mx-auto flex max-w-4xl items-center justify-between p-4">
-        <span className="font-semibold">Ticket Management</span>
+        <div className="flex items-center gap-4">
+          <span className="font-semibold">Ticket Management</span>
+          {/* Admin-only link. Hiding it is UX, not security — the route it
+              points to also guards on role, and the server must too. */}
+          {session?.user.role === "admin" && (
+            <NavLink
+              to="/users"
+              className={({ isActive }) =>
+                isActive
+                  ? "text-sm font-medium text-foreground"
+                  : "text-sm text-muted-foreground hover:text-foreground"
+              }
+            >
+              Users
+            </NavLink>
+          )}
+        </div>
         <div className="flex items-center gap-4">
           <span className="text-muted-foreground text-sm">
             {session?.user.name}
