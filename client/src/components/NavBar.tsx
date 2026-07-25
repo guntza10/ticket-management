@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router";
-import { signOut, useSession } from "../lib/auth-client.ts";
+import { signOut, useSession } from "@/lib/auth-client";
+import { Button } from "@/components/ui/button";
 
 // Rendered only inside a protected route, so a session is guaranteed here.
 export default function NavBar() {
@@ -12,18 +13,16 @@ export default function NavBar() {
   }
 
   return (
-    <header className="border-b border-gray-200 bg-white">
+    <header className="border-b bg-background">
       <nav className="mx-auto flex max-w-4xl items-center justify-between p-4">
-        <span className="font-semibold text-gray-900">Ticket Management</span>
+        <span className="font-semibold">Ticket Management</span>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-600">{session?.user.name}</span>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
+          <span className="text-muted-foreground text-sm">
+            {session?.user.name}
+          </span>
+          <Button variant="outline" size="sm" onClick={handleLogout}>
             Log out
-          </button>
+          </Button>
         </div>
       </nav>
     </header>

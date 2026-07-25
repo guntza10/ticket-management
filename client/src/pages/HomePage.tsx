@@ -1,12 +1,19 @@
-import NavBar from "../components/NavBar.tsx";
+import NavBar from "@/components/NavBar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-muted">
       <NavBar />
       <main className="mx-auto max-w-4xl p-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Home</h1>
-        <p className="mt-2 text-gray-600">You are signed in.</p>
+        <Card>
+          <CardHeader>
+            <CardTitle>Home</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground">You are signed in.</p>
+          </CardContent>
+        </Card>
       </main>
     </div>
   );
