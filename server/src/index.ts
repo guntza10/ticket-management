@@ -1,4 +1,5 @@
 import express from "express";
+import cors from "cors";
 import { toNodeHandler } from "better-auth/node";
 import prisma from "./db.ts";
 import { auth } from "./auth.ts";
@@ -6,6 +7,16 @@ import { requireAuth } from "./require-auth.ts";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+
+// Allow the Vite SPA (different origin) to call this API and send its session
+// cookie. credentials:true is required for cookie-based auth across origins.
+// Must run before the route handlers so preflight requests are answered.
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+  }),
+);
 
 // Better Auth handler (sign-up / sign-in / get-session, etc.).
 // Must be mounted BEFORE express.json(): it reads the raw request body itself,
