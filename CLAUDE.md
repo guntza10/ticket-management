@@ -67,4 +67,5 @@ server enables CORS (client origin + credentials). Details in the workspace file
 - ✅ **Phase 1** — monorepo skeleton; client + server run.
 - ✅ **Server** — Prisma + PostgreSQL; better-auth (email/password, DB sessions, roles, admin seed); CORS for the SPA.
 - ✅ **Client** — Tailwind v4, React Router, better-auth client, shadcn/ui; **Login + Home** pages wired to the auth API (login → protected home → logout).
-- ⏭️ **Next** — the tickets domain (schema + API + UI).
+- ✅ **Role-based access** — client infers the `role` field; `ProtectedRoute` takes an optional `role`; **admin-only `/users`** placeholder page + a NavLink shown only to admins. Client-side UX guard only — server enforcement comes with the real endpoint.
+- ⏭️ **Next** — the tickets domain (schema + API + UI); a real admin-only users list (server `requireAdmin` + `GET /api/users`).
