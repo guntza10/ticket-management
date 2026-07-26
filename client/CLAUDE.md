@@ -8,7 +8,7 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - **React 19** + **TypeScript** (Vite 8, `@vitejs/plugin-react`)
 - **Tailwind v4** (CSS-first, `@tailwindcss/vite`)
 - **shadcn/ui** (Radix + cva + tailwind-merge + lucide-react)
-- **React Router 7** — declarative mode (`BrowserRouter` + `<Routes>`)
+- **React Router 8** — declarative mode (`BrowserRouter` + `<Routes>`)
 - **react-hook-form + zod** (via `@hookform/resolvers/zod`) for forms
 - **better-auth** React client (`better-auth/react`)
 

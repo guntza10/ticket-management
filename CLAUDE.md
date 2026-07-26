@@ -18,7 +18,7 @@ resolve tickets; admins additionally manage agent accounts and roles. Monorepo v
 
 | Layer | Stack |
 | --- | --- |
-| Client | React 19, TypeScript, Vite 8, Tailwind v4, React Router 7 (declarative), react-hook-form + zod, shadcn/ui, better-auth client |
+| Client | React 19, TypeScript, Vite 8, Tailwind v4, React Router 8 (declarative), react-hook-form + zod, shadcn/ui, better-auth client |
 | Server | Express 5, Node 24 (native TS), Prisma 7 + PostgreSQL, better-auth |
 | Tooling | npm workspaces, oxlint (client), Vitest (planned) |
 
