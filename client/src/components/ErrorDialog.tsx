@@ -16,7 +16,7 @@ export default function ErrorDialog({
   message,
   onClose,
 }: {
-  message: string;
+  message: string | null;
   onClose: () => void;
 }) {
   return (
