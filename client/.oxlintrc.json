@@ -11,6 +11,13 @@
     "react/rules-of-hooks": "error",
     "react/only-export-components": ["warn", { "allowConstantExport": true }],
     "typescript/no-explicit-any": "error",
-    "react/react-in-jsx-scope": "off"
+    "react/react-in-jsx-scope": "off",
+
+    "no-nested-ternary": "error",
+    "no-else-return": "error",
+    "max-params": ["error", { "max": 4 }],
+    "max-depth": ["error", { "max": 4 }],
+    "max-lines-per-function": ["warn", { "max": 100 }],
+    "max-lines": ["warn", { "max": 300 }]
   }
 }

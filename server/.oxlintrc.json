@@ -9,6 +9,13 @@
   },
   "rules": {
     "typescript/no-explicit-any": "error",
-    "import/no-unassigned-import": "off"
+    "import/no-unassigned-import": "off",
+
+    "no-nested-ternary": "error",
+    "no-else-return": "error",
+    "max-params": ["error", { "max": 4 }],
+    "max-depth": ["error", { "max": 4 }],
+    "max-lines-per-function": ["warn", { "max": 100 }],
+    "max-lines": ["warn", { "max": 300 }]
   }
 }
