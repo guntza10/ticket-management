@@ -59,7 +59,7 @@ server enables CORS (client origin + credentials). Details in the workspace file
 - **Skills:** vendored as real files under `.claude/skills/` (committed). `.agents/` is gitignored; `skills-lock.json` is the source of truth.
 - **Secrets:** never commit. Use `.env` (gitignored) + `.env.example`, and expand env vars in configs (e.g. `.mcp.json`).
 - **Clean TypeScript is enforced** on every `.ts`/`.tsx` edit by a `PostToolUse` hook (`.claude/hooks/ts-check.sh`) that runs oxlint + `tsc` for the touched workspace and reports failures back. Rule sets live in the workspace files. This is the **objective** layer (deterministic, hard gate).
-- **Subjective clean-code** (naming, single-responsibility, abstraction, readability) — what the linter can't judge — is reviewed by the **`clean-code-reviewer` subagent**. Invoke it after writing a meaningful chunk of TS (a component / module / feature) or before a commit — **not** on every edit (a per-edit LLM review is slow and can loop). It's read-only; apply its findings yourself. Don't duplicate the objective rules the hook already gates.
+- **Subjective clean-code** (naming, single-responsibility, abstraction, readability) — what the linter can't judge — is reviewed by the **`clean-code-reviewer` subagent**. Invoke it after writing a meaningful chunk of TS (a component / module / feature) or before a commit — **not** on every edit (a per-edit LLM review is slow and can loop). It's read-only; apply its findings yourself.
 - **Reusable setup kit:** generalizable governance/config (the clean-TS hook, reviewer agents, lint/tsconfig) is captured in `~/Desktop/Practice/_setup-kit/`. When a new reusable piece is built here — e.g. the **Playwright + testing-agent** testing layer (course lessons 16–20) — `cp` it into the kit's `templates/` and note it in the kit's README.
 
 ## Testing (E2E)
@@ -81,6 +81,11 @@ server enables CORS (client origin + credentials). Details in the workspace file
   tests sign in far more often than a person and would collect 429s.
 - The root `tsconfig.json` + `.oxlintrc.json` exist **only** to gate `e2e/` and
   `playwright.config.ts`; the `ts-check.sh` hook routes root TS edits to them.
+- **Writing specs is delegated to the `e2e-tester` subagent** — give it a flow in plain
+  words. Invoke it only once the feature's UI is wired up and **manually working**: it
+  iterates against a real browser, so a half-built page burns turns rediscovering that.
+  It reports app bugs instead of patching them; applying the fix is on you. How it works
+  and the rules it follows live in its own file, not here.
 
 ## Workflow
 
