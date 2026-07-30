@@ -24,6 +24,11 @@ export const auth = betterAuth({
   // Better Auth checks the request Origin against this list (CSRF protection)
   // on state-changing calls like sign-in, so the client origin must be trusted.
   trustedOrigins: [CLIENT_ORIGIN],
+  // Better Auth turns the origin check OFF by default when NODE_ENV=test, and
+  // that switch also disables the CSRF check. The E2E run sets NODE_ENV=test,
+  // so without this the suite would be exercising an app whose CSRF gate is
+  // silently removed — and the gate itself could never be tested. Pin it on.
+  advanced: { disableOriginCheck: false },
   // Internal portal: sign-in stays on, but public self-registration is off.
   emailAndPassword: { enabled: true, disableSignUp: true },
   // Better Auth's own rate limiter (default when on: 100 requests / 60s, with a
