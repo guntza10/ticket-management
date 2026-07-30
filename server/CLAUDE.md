@@ -14,6 +14,7 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
 - `npm run dev:server` — `node --watch` → http://localhost:3000
 - `npm run typecheck:server` — `tsc --noEmit`
 - `npm run db:generate | db:migrate | db:studio | db:seed --workspace server`
+- Test-DB variants: `start:test`, `db:migrate:test`, `db:seed:test`, `db:reset:test`
 
 ## Runtime & TypeScript
 
@@ -42,6 +43,22 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
 
 - PostgreSQL on **localhost:5432**, DB `ticket_management`; `DATABASE_URL` in `.env`.
 - Start your local Postgres before running the server or any `db:*` script.
+- **Test DB:** `ticket_management_test` on the same server, configured by `.env.test`
+  (gitignored; `.env.test.example` is committed). Only the Playwright run touches it.
+  - `start:test` / `db:seed:test` use `node --env-file=.env.test`.
+  - The `prisma` CLI can't take `--env-file`, so the `db:*:test` scripts set
+    `DOTENV_CONFIG_PATH=.env.test` — `prisma.config.ts` does `import "dotenv/config"`,
+    which reads that variable to pick the file.
+
+## Environment-driven config
+
+`src/config.ts` holds the three values that differ between the dev run and the E2E run —
+`PORT`, `CLIENT_ORIGIN` (used by **both** CORS and `trustedOrigins`, so they can't
+drift), and `RATE_LIMIT_ENABLED`. Don't hardcode ports or origins in `index.ts`/`auth.ts`.
+
+**Rate limiting:** Better Auth's built-in limiter is enabled only when
+`NODE_ENV=production` (default: 100 requests / 60s, stricter on sign-in). Keep it on in
+production; `.env.test` sets `NODE_ENV=test` so E2E runs don't hit 429s.
 
 ## Gotchas
 

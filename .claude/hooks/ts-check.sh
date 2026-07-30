@@ -15,10 +15,12 @@ case "$file" in
   *) exit 0 ;;
 esac
 
-# Which workspace does the file belong to?
+# Which workspace does the file belong to? "e2e" is not an npm workspace — the
+# Playwright config and specs live at the repo root, gated by root-level scripts.
 case "$file" in
   */client/* | client/*) ws=client ;;
   */server/* | server/*) ws=server ;;
+  */e2e/* | e2e/* | */playwright.config.ts | playwright.config.ts) ws=e2e ;;
   *) exit 0 ;;
 esac
 
@@ -26,12 +28,16 @@ esac
 repo="${CLAUDE_PROJECT_DIR:-$(git -C "$(dirname "$file")" rev-parse --show-toplevel 2>/dev/null)}"
 [ -n "$repo" ] && cd "$repo" || exit 0
 
-out=$(npm run --silent lint --workspace "$ws" 2>&1 && npm run --silent typecheck --workspace "$ws" 2>&1)
+if [ "$ws" = "e2e" ]; then
+  out=$(npm run --silent lint:e2e 2>&1 && npm run --silent typecheck:e2e 2>&1)
+else
+  out=$(npm run --silent lint --workspace "$ws" 2>&1 && npm run --silent typecheck --workspace "$ws" 2>&1)
+fi
 status=$?
 
 if [ "$status" -ne 0 ]; then
   {
-    echo "Clean-TypeScript check failed for workspace '$ws' (edited: $file)."
+    echo "Clean-TypeScript check failed for '$ws' (edited: $file)."
     echo "Fix the lint/type errors below before continuing:"
     echo "$out"
   } >&2

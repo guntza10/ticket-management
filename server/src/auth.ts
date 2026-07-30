@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "./db.ts";
+import { CLIENT_ORIGIN, RATE_LIMIT_ENABLED } from "./config.ts";
 
 // Session cookies are signed with this secret. Without it Better Auth silently
 // falls back to a default value published in its own source — and it only
@@ -22,9 +23,14 @@ export const auth = betterAuth({
   // The SPA dev server (Vite) runs on a different origin than this API.
   // Better Auth checks the request Origin against this list (CSRF protection)
   // on state-changing calls like sign-in, so the client origin must be trusted.
-  trustedOrigins: ["http://localhost:5173"],
+  trustedOrigins: [CLIENT_ORIGIN],
   // Internal portal: sign-in stays on, but public self-registration is off.
   emailAndPassword: { enabled: true, disableSignUp: true },
+  // Better Auth's own rate limiter (default when on: 100 requests / 60s, with a
+  // stricter rule on the sign-in routes). It exists to blunt credential
+  // stuffing, so it stays on in production — see config.ts for why the E2E run
+  // is the one place it's off.
+  rateLimit: { enabled: RATE_LIMIT_ENABLED },
   user: {
     additionalFields: {
       // Mirrors the Prisma `Role` enum on User. input:false means a user can

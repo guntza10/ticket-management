@@ -9,6 +9,15 @@ build
 .env
 .env.local
 .env.*.local
+# Holds the test DB password + auth secret. client/.env.test is only a URL, so
+# it stays committed.
+server/.env.test
+
+# Playwright output
+test-results
+playwright-report
+blob-report
+.playwright
 
 # Logs
 *.log

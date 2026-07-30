@@ -45,6 +45,10 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   truth for both the rules and the type (`z.infer`). zod v4 → top-level `z.email()`.
 - **Auth:** go through `src/lib/auth-client.ts` (`signIn` / `signOut` / `useSession`).
   Base URL from `VITE_API_URL` (`.env`, gitignored; `.env.example` committed).
+- **Test mode:** `npm run dev:test` = `vite --mode test --port 5174 --strictPort`, which
+  loads the committed `.env.test` (secret-free — just `VITE_API_URL=http://localhost:3001`).
+  Mode-specific env files override `.env`, so this is how the Playwright run points the
+  SPA at the test API instead of the dev one.
 - **Routing:** declarative; guard private routes with `ProtectedRoute`, which waits out
   `useSession().isPending` before redirecting (avoids bouncing a logged-in user).
 
