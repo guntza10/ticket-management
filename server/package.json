@@ -16,7 +16,8 @@
     "db:seed": "node --env-file-if-exists=.env prisma/seed.ts",
     "db:migrate:test": "DOTENV_CONFIG_PATH=.env.test prisma migrate deploy",
     "db:seed:test": "node --env-file=.env.test prisma/seed.ts",
-    "db:reset:test": "DOTENV_CONFIG_PATH=.env.test prisma migrate reset --force --skip-seed"
+    "db:reset:test": "DOTENV_CONFIG_PATH=.env.test prisma migrate reset --force --skip-seed",
+    "db:truncate:test": "node --env-file=.env.test prisma/truncate.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",

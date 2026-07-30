@@ -8,6 +8,9 @@ const API_URL = "http://localhost:3001";
 
 export default defineConfig({
   testDir: "./e2e",
+  // Wipes and re-seeds ticket_management_test before the run. Playwright starts
+  // the webServers below first, so the API is already up when this executes.
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
   // Fail the run if a test was left focused with .only.
   forbidOnly: !!process.env.CI,
@@ -18,7 +21,9 @@ export default defineConfig({
   use: {
     // Tests navigate with page.goto("/login") — this is what "/" resolves to.
     baseURL: CLIENT_URL,
-    trace: "on-first-retry",
+    // Keep the trace of any failed attempt. "on-first-retry" would capture
+    // nothing locally, where retries are 0 — exactly when a trace is wanted.
+    trace: "retain-on-failure",
   },
 
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

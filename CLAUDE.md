@@ -74,7 +74,21 @@ server enables CORS (client origin + credentials). Details in the workspace file
 - **Env files:** `server/.env.test` holds secrets → **gitignored**, with
   `server/.env.test.example` committed. `client/.env.test` is only an API URL → committed.
 - **Prepare the test DB once** (Postgres must be running):
-  `npm run db:migrate:test --workspace server` then `db:seed:test`.
+  `npm run db:migrate:test --workspace server` then `db:seed:test`. After that every
+  run resets itself.
+- **`globalSetup` (`e2e/global-setup.ts`) migrates, truncates, then re-seeds before each
+  run**, so a run always starts from the same two accounts and rows never accumulate.
+  Migrating first means a new migration doesn't turn the suite red with a confusing
+  "column does not exist". It runs *after* the webServers start — that's Playwright's
+  order, not a choice.
+- **Three guards keep a test run off the dev database**, because `--env-file` (and
+  dotenv) will *not* overwrite a `DATABASE_URL` that is already exported, so an ambient
+  value silently outranks `.env.test`:
+  1. `global-setup.ts` strips `DATABASE_URL` from the environment it hands the db scripts.
+  2. `server/src/db.ts` refuses to start when `NODE_ENV=test` and the database isn't `*_test`.
+  3. `prisma/truncate.ts` refuses to wipe anything not named `*_test`.
+- `truncate.ts` asks Postgres which tables exist rather than listing them, so a new model
+  is covered automatically — a hardcoded list would quietly stop wiping the day one is added.
 - **Rate limiting:** Better Auth's limiter is on only when `NODE_ENV=production`
   (`server/src/config.ts`). It stays **on in production** — it blunts credential
   stuffing. The E2E run sets `NODE_ENV=test`, which is the one place it's off, because

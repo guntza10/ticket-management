@@ -14,7 +14,8 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
 - `npm run dev:server` — `node --watch` → http://localhost:3000
 - `npm run typecheck:server` — `tsc --noEmit`
 - `npm run db:generate | db:migrate | db:studio | db:seed --workspace server`
-- Test-DB variants: `start:test`, `db:migrate:test`, `db:seed:test`, `db:reset:test`
+- Test-DB variants: `start:test`, `db:migrate:test`, `db:seed:test`, `db:truncate:test`,
+  `db:reset:test`
 
 ## Runtime & TypeScript
 
@@ -46,6 +47,11 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
 - **Test DB:** `ticket_management_test` on the same server, configured by `.env.test`
   (gitignored; `.env.test.example` is committed). Only the Playwright run touches it.
   - `start:test` / `db:seed:test` use `node --env-file=.env.test`.
+  - `db:truncate:test` empties every table (the Playwright `globalSetup` calls it before
+    each run). It **refuses any database not named `*_test`** — the only thing separating
+    it from the dev data is which env file loaded, so the guard is not optional.
+    `db:reset:test` is the heavier hammer: it drops and re-applies migrations, for when
+    the schema itself is wrong.
   - The `prisma` CLI can't take `--env-file`, so the `db:*:test` scripts set
     `DOTENV_CONFIG_PATH=.env.test` — `prisma.config.ts` does `import "dotenv/config"`,
     which reads that variable to pick the file.

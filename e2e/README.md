@@ -24,6 +24,11 @@ silently absent and untestable. Don't remove that line.
 `support/auth.ts` holds the seeded credentials and the shared login locators
 (it is not a spec, so Playwright does not collect it).
 
+`global-setup.ts` migrates, truncates, then re-seeds `ticket_management_test` before
+every run, so a spec may assume exactly the two seeded accounts and nothing else.
+Without it each sign-in left a session row behind for good, and anything that counted
+rows would have passed or failed based on how often the suite had been run before.
+
 ## Running
 
 ```bash
@@ -35,9 +40,11 @@ Playwright starts the API (port 3001, `server/.env.test`) and the SPA (port 5174
 `client/.env.test`) itself, so no dev server needs to be running. Both point at the
 `ticket_management_test` database, never at the dev one.
 
-Prerequisites: PostgreSQL running, and the test DB prepared once with
+The only prerequisite is **PostgreSQL running** with a `ticket_management_test` database
+that exists (`createdb ticket_management_test`). Migrating, wiping and seeding all happen
+per run, and `pretest:e2e` installs the Chromium build Playwright needs, so a fresh clone
+needs nothing beyond `npm install`.
 
-```bash
-npm run db:migrate:test --workspace server
-npm run db:seed:test --workspace server
-```
+If `DATABASE_URL` is exported in your shell, the run refuses to start rather than use it —
+`--env-file` cannot overwrite an existing variable, so an ambient value would otherwise
+point the whole suite at that database. Unset it.
