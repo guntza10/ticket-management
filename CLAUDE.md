@@ -113,7 +113,22 @@ server enables CORS (client origin + credentials). Details in the workspace file
 - ✅ **Server** — Prisma + PostgreSQL; better-auth (email/password, DB sessions, roles, admin seed); CORS for the SPA.
 - ✅ **Client** — Tailwind v4, React Router, better-auth client, shadcn/ui; **Login + Home** pages wired to the auth API (login → protected home → logout).
 - ✅ **Role-based access** — client infers the `role` field; `ProtectedRoute` takes an optional `role`; **admin-only `/users`** placeholder page + a NavLink shown only to admins. Client-side UX guard only — server enforcement comes with the real endpoint.
-- ✅ **E2E harness** — Playwright + a dedicated `ticket_management_test` DB and test
-  ports; **no specs written yet** (setup + config only, verified by a throwaway
-  login spec that passed and was removed).
+- ✅ **E2E** — Playwright against a dedicated `ticket_management_test` DB and test ports;
+  **45 specs covering the whole auth system** (sign-in, validation, route protection,
+  session lifecycle, the auth API, cookie/CORS/CSRF properties). Every run migrates,
+  truncates and re-seeds itself.
 - ⏭️ **Next** — the tickets domain (schema + API + UI); a real admin-only users list (server `requireAdmin` + `GET /api/users`).
+
+## Known gaps — deliberately deferred
+
+Each of these is a decision that was postponed, not an oversight. The **trigger** column
+is what will make it start hurting; revisit when you hit it.
+
+| Gap | Trigger | What to do |
+| --- | --- | --- |
+| **Specs run 5-way parallel against one shared test DB.** Safe today only because no spec touches data another spec can see — each just signs in and reads its own session. | The first spec that creates or counts domain rows, i.e. **the tickets domain**. | Give each test its own data (unique subjects per worker) — or, as a blunt fallback, set `workers: 1` in `playwright.config.ts`. Decide before writing ticket specs, not after they go flaky. |
+| **Role authorization is proven on the client only.** `route-protection.spec.ts` shows an agent is routed away from `/users`; nothing shows the *server* would refuse them. | Shipping `requireAdmin` + `GET /api/users`. | Add an API-level spec: agent session → 403. The client-side test is UX, not security. |
+| **No catch-all route.** `App.tsx` has `/login`, `/`, `/users` and nothing else, so an unknown URL renders a blank page. | Anyone mistyping a URL; more so once there are more routes. | Add a `*` route with a 404 page, then a spec for it. |
+| **No "return to intended page" after sign-in.** A signed-out visit to `/users` lands on `/` after login, not `/users`. | Deep links being shared, or any flow that sends users to a specific page. | Have `ProtectedRoute` record the attempted path and `LoginPage` honour it. |
+| **`CardTitle` renders a `div`, not a heading.** Screen readers find no page headings; specs assert body copy instead of `getByRole("heading")`. | Any accessibility pass. | Render page titles as real headings, then switch those assertions over. |
+| **`ProtectedRoute`'s "Loading…" state is untested.** | — | Left alone on purpose: it's a sub-100ms transient and any assertion on it races the session request. |
