@@ -4,6 +4,7 @@ import { toNodeHandler } from "better-auth/node";
 import prisma from "./db.ts";
 import { auth } from "./auth.ts";
 import { requireAuth } from "./require-auth.ts";
+import { requireAdmin } from "./require-admin.ts";
 import { CLIENT_ORIGIN, PORT } from "./config.ts";
 
 const app = express();
@@ -40,6 +41,31 @@ app.get("/api/me", requireAuth, (_req, res) => {
       role: user.role,
     },
   });
+});
+
+// Admin-only user list. The two guards are mounted in order and read top to
+// bottom as the sentence they enforce: authenticate, then authorize.
+//
+// `select` is an allow-list, not a convenience: the user table also holds
+// emailVerified, image and whatever a later migration adds, and a bare
+// findMany() would ship every one of those to the browser the day it appears.
+app.get("/api/users", requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    res.json({ users });
+  } catch (err) {
+    console.error("[GET /api/users]", err);
+    res.status(500).json({ error: "internal_error" });
+  }
 });
 
 app.get("/", (_req, res) => {

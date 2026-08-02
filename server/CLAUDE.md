@@ -40,6 +40,19 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
 - Seed an admin with `npm run db:seed --workspace server` (reads `ADMIN_EMAIL` /
   `ADMIN_PASSWORD` from `.env`).
 
+## Authorization
+
+- Two separate guards, mounted in that order: `requireAuth` (is there a session? no → **401**)
+  then `requireAdmin` (is the role `admin`? no → **403**). Authentication and authorization
+  are different questions, so they get different middleware and different status codes —
+  401 tells a client to sign in, which would never fix an agent hitting an admin route.
+- `requireAdmin` reads `res.locals.session` and therefore **only works mounted after
+  `requireAuth`**. `require-auth.ts` augments `Express.Locals` so that session is typed
+  (without it every `res.locals.session` is `any`).
+- **Endpoints returning user data always `select` an allow-list of fields.** A bare
+  `findMany()` ships every column the table happens to have, including whatever the next
+  migration adds.
+
 ## Database
 
 - PostgreSQL on **localhost:5432**, DB `ticket_management`; `DATABASE_URL` in `.env`.
@@ -76,4 +89,5 @@ production; `.env.test` sets `NODE_ENV=test` so E2E runs don't hit 429s.
 
 - `src/index.ts` — Express app + routes
 - `src/auth.ts` — better-auth config · `src/require-auth.ts` — session guard
+  · `src/require-admin.ts` — role guard
 - `src/db.ts` — Prisma client · `prisma/` — schema, migrations, `seed.ts`
