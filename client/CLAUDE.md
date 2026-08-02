@@ -44,7 +44,14 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - **Forms:** react-hook-form + a zod schema (`zodResolver`). One schema is the source of
   truth for both the rules and the type (`z.infer`). zod v4 → top-level `z.email()`.
 - **Auth:** go through `src/lib/auth-client.ts` (`signIn` / `signOut` / `useSession`).
-  Base URL from `VITE_API_URL` (`.env`, gitignored; `.env.example` committed).
+- **API base URL:** one export, `API_URL` in `src/lib/api.ts` (from `VITE_API_URL`;
+  `.env` gitignored, `.env.example` committed). The auth client reads it too — don't
+  re-read the env var elsewhere or half the app can end up on a different server.
+- **Data fetching:** plain `fetch` in a `useEffect` (no query library yet). Every call
+  needs `credentials: "include"` — the API is cross-origin, so without it the browser
+  sends no session cookie and the server answers 401. `fetch` rejects only on network
+  failure, so **check `response.ok` yourself**; a 403 is a successful exchange. Abort on
+  cleanup (`AbortController`) — StrictMode runs effects twice in dev.
 - **Test mode:** `npm run dev:test` = `vite --mode test --port 5174 --strictPort`, which
   loads the committed `.env.test` (secret-free — just `VITE_API_URL=http://localhost:3001`).
   Mode-specific env files override `.env`, so this is how the Playwright run points the
@@ -54,6 +61,6 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 
 ## Structure
 
-- `src/pages/` — route pages (`LoginPage`, `HomePage`)
+- `src/pages/` — route pages (`LoginPage`, `HomePage`, `UsersPage`)
 - `src/components/` — app components; `src/components/ui/` — shadcn (generated)
-- `src/lib/` — `auth-client.ts`, `utils.ts` (shadcn `cn`)
+- `src/lib/` — `auth-client.ts`, `api.ts` (API base URL), `utils.ts` (shadcn `cn`)

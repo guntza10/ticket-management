@@ -78,6 +78,7 @@ Run from the repo root:
 | --- | --- | --- | --- |
 | `ALL` | `/api/auth/*` | — | better-auth handler (sign-in, sign-out, get-session, …) |
 | `GET` | `/api/me` | session | The signed-in user (`id`, `email`, `name`, `role`) |
+| `GET` | `/api/users` | `admin` | All users (`id`, `name`, `email`, `role`, `createdAt`) |
 | `GET` | `/health` | — | Liveness check |
 | `GET` | `/db/health` | — | Database connectivity (`connected` / `error` only) |
 
@@ -87,7 +88,7 @@ Run from the repo root:
 | --- | --- | --- |
 | `/login` | public | Email + password sign-in |
 | `/` | signed in | Home |
-| `/users` | `admin` only | Users (placeholder — the real list lands with `GET /api/users`) |
+| `/users` | `admin` only | Users — read-only table fed by `GET /api/users` |
 
 Route protection is handled by `ProtectedRoute`, which takes an optional `role`.
 This is a **UX guard only** — authorization is enforced server-side per endpoint.
