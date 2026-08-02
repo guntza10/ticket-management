@@ -53,6 +53,21 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
   `findMany()` ships every column the table happens to have, including whatever the next
   migration adds.
 
+## Error handling
+
+- **One error-handling middleware, last in `index.ts`** — four parameters
+  (`err, req, res, next`); three and Express silently treats it as ordinary
+  middleware that never runs.
+- **Routes don't `try/catch` just to produce a 500.** Express 5 forwards a rejected
+  promise from an `async` handler to that middleware on its own. Catch only when the
+  error should *change the response* (Prisma `P2002` → 409) — and `throw err` for
+  anything unrecognised, or you swallow errors you never meant to handle.
+- **Why bother, when Express already has a default handler:** the default is safe
+  (it hides the stack once `NODE_ENV=production`) but replies in **HTML**. Ours keeps
+  every error in the API one shape — JSON `{ error: "…" }`, same as 401/403 — and
+  doesn't depend on an env var being set right. It's also where error→status mapping
+  will live as the API grows.
+
 ## Database
 
 - PostgreSQL on **localhost:5432**, DB `ticket_management`; `DATABASE_URL` in `.env`.

@@ -92,8 +92,10 @@ starts a server.
   — look for a missing `select`.
 - Error responses that echo internals to the client, e.g.
   `res.json({ message: (err as Error).message })` — that can leak connection
-  strings, table names, and file paths. Check `/db/health` in
-  `server/src/index.ts`.
+  strings, table names, and file paths. Every unhandled error funnels through
+  the error-handling middleware at the bottom of `server/src/index.ts`; check
+  that it still logs server-side and returns a fixed string, and that no route
+  answers with an error's own message.
 - `res.json(res.locals.session)` — verify what the session object actually
   contains before it is handed to the client.
 

@@ -79,8 +79,12 @@ Run from the repo root:
 | `ALL` | `/api/auth/*` | — | better-auth handler (sign-in, sign-out, get-session, …) |
 | `GET` | `/api/me` | session | The signed-in user (`id`, `email`, `name`, `role`) |
 | `GET` | `/api/users` | `admin` | All users (`id`, `name`, `email`, `role`, `createdAt`) |
-| `GET` | `/health` | — | Liveness check |
-| `GET` | `/db/health` | — | Database connectivity (`connected` / `error` only) |
+| `GET` | `/health` | — | Liveness check (the Playwright run waits on it) |
+
+Unhandled errors funnel through one error-handling middleware at the bottom of
+`server/src/index.ts`, which logs the error and returns `500 internal_error` —
+so every error the API returns is JSON, and no route needs a `try/catch` merely
+to produce a 500.
 
 ## Client routes
 
