@@ -112,12 +112,18 @@ server enables CORS (client origin + credentials). Details in the workspace file
 - ✅ **Phase 1** — monorepo skeleton; client + server run.
 - ✅ **Server** — Prisma + PostgreSQL; better-auth (email/password, DB sessions, roles, admin seed); CORS for the SPA.
 - ✅ **Client** — Tailwind v4, React Router, better-auth client, shadcn/ui; **Login + Home** pages wired to the auth API (login → protected home → logout).
-- ✅ **Role-based access** — client infers the `role` field; `ProtectedRoute` takes an optional `role`; **admin-only `/users`** placeholder page + a NavLink shown only to admins. Client-side UX guard only — server enforcement comes with the real endpoint.
+- ✅ **Role-based access** — enforced on **both** sides. Server: `requireAuth` → 401,
+  `requireAdmin` → 403. Client: `ProtectedRoute role="admin"` + a NavLink only admins see
+  (UX layer; the server is the one that actually refuses).
+- ✅ **User list** — `GET /api/users` (admin-only, field allow-list) rendered as a
+  read-only shadcn table on `/users`. Verified in a real browser: admin sees the rows,
+  an agent gets 403 from the API and is bounced off the route. Create / edit / delete are
+  still open (Phase 3).
 - ✅ **E2E** — Playwright against a dedicated `ticket_management_test` DB and test ports;
   **45 specs covering the whole auth system** (sign-in, validation, route protection,
   session lifecycle, the auth API, cookie/CORS/CSRF properties). Every run migrates,
   truncates and re-seeds itself.
-- ⏭️ **Next** — the tickets domain (schema + API + UI); a real admin-only users list (server `requireAdmin` + `GET /api/users`).
+- ⏭️ **Next** — the rest of Phase 3 (create / edit / delete a user), then the tickets domain (schema + API + UI).
 
 ## Known gaps — deliberately deferred
 
@@ -127,7 +133,8 @@ is what will make it start hurting; revisit when you hit it.
 | Gap | Trigger | What to do |
 | --- | --- | --- |
 | **Specs run 5-way parallel against one shared test DB.** Safe today only because no spec touches data another spec can see — each just signs in and reads its own session. | The first spec that creates or counts domain rows, i.e. **the tickets domain**. | Give each test its own data (unique subjects per worker) — or, as a blunt fallback, set `workers: 1` in `playwright.config.ts`. Decide before writing ticket specs, not after they go flaky. |
-| **Role authorization is proven on the client only.** `route-protection.spec.ts` shows an agent is routed away from `/users`; nothing shows the *server* would refuse them. | Shipping `requireAdmin` + `GET /api/users`. | Add an API-level spec: agent session → 403. The client-side test is UX, not security. |
+| **Server-side role authorization has no spec.** `requireAdmin` is implemented and was verified by hand (curl + a real browser: agent → 403), but the suite still only proves the *client* routes an agent away from `/users`. | Now — the code exists, so nothing stops a regression from going unnoticed. | Add an API-level spec: agent session → `GET /api/users` → 403, and an admin session → 200 with the expected rows. |
+| **`GET /api/users` returns every user, unpaginated.** Fine at three rows. | A real agent roster (dozens+), or a page that has to scroll forever. | Add `take`/`skip` (or cursor) + a total count, and paginate the table. |
 | **No catch-all route.** `App.tsx` has `/login`, `/`, `/users` and nothing else, so an unknown URL renders a blank page. | Anyone mistyping a URL; more so once there are more routes. | Add a `*` route with a 404 page, then a spec for it. |
 | **No "return to intended page" after sign-in.** A signed-out visit to `/users` lands on `/` after login, not `/users`. | Deep links being shared, or any flow that sends users to a specific page. | Have `ProtectedRoute` record the attempted path and `LoginPage` honour it. |
 | **`CardTitle` renders a `div`, not a heading.** Screen readers find no page headings; specs assert body copy instead of `getByRole("heading")`. | Any accessibility pass. | Render page titles as real headings, then switch those assertions over. |

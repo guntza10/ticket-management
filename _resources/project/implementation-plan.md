@@ -29,12 +29,14 @@ Legend: 🔴 must-have · 🟡 important · 🟢 later
 
 ## Phase 3 — User Management 🔴
 
-- [ ] Create user management page (admin only)
+- [ ] Create user management page (admin only) — *read-only list shipped; the
+      create/edit/delete controls are still missing*
 - [ ] Implement create agent API endpoint
-- [ ] Implement list users API endpoint
+- [x] Implement list users API endpoint
 - [ ] Implement edit user API endpoint
 - [ ] Implement delete user API endpoint
-- [ ] Add role-based access control (admin vs agent)
+- [x] Add role-based access control (admin vs agent) — `requireAdmin` (403);
+      apply it to each new endpoint as it lands
 
 ## Phase 4 — Ticket CRUD 🔴
 
