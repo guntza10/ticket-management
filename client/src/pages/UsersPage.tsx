@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import NavBar from "@/components/NavBar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -9,7 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { API_URL } from "@/lib/api";
+import { api } from "@/lib/api";
 
 // Mirrors the `select` in GET /api/users. createdAt is a string, not a Date:
 // JSON has no date type, so Prisma's DateTime arrives here as an ISO string.
@@ -21,45 +21,26 @@ type UserRow = {
   createdAt: string;
 };
 
+// No status check and no try/catch: axios rejects on 4xx/5xx, and React Query
+// turns that rejection into the `error` below. The signal comes from React
+// Query, which aborts it when the component unmounts or the query is replaced —
+// the job the hand-rolled AbortController used to do.
+async function getUsers(signal: AbortSignal): Promise<UserRow[]> {
+  const { data } = await api.get<{ users: UserRow[] }>("/api/users", { signal });
+  return data.users;
+}
+
 export default function UsersPage() {
-  const [users, setUsers] = useState<UserRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    // StrictMode runs effects twice in dev, and a user can navigate away
-    // mid-request; aborting on cleanup stops the stale response from landing
-    // in state after the component is gone.
-    const controller = new AbortController();
-
-    async function loadUsers() {
-      try {
-        // credentials: "include" is what sends the session cookie. Without it
-        // the browser omits cookies on a cross-origin call and the API — which
-        // cannot tell us apart from a stranger — answers 401.
-        const response = await fetch(`${API_URL}/api/users`, {
-          credentials: "include",
-          signal: controller.signal,
-        });
-
-        // fetch only rejects on a network failure; a 403 is a *successful*
-        // HTTP exchange, so status has to be checked by hand.
-        if (!response.ok) {
-          throw new Error(`Could not load users (${String(response.status)})`);
-        }
-
-        const data = (await response.json()) as { users: UserRow[] };
-        setUsers(data.users);
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        setError(err instanceof Error ? err.message : "Could not load users");
-      }
-    }
-
-    void loadUsers();
-    return () => {
-      controller.abort();
-    };
-  }, []);
+  // queryKey is the cache's identity, not a label: anything that refetches or
+  // invalidates this list — creating a user in Phase 3, say — names ["users"].
+  const {
+    data: users,
+    isPending,
+    error,
+  } = useQuery({
+    queryKey: ["users"],
+    queryFn: ({ signal }) => getUsers(signal),
+  });
 
   return (
     <div className="min-h-screen bg-muted">
@@ -70,11 +51,11 @@ export default function UsersPage() {
             <CardTitle>Users</CardTitle>
           </CardHeader>
           <CardContent>
-            {error !== null && <p className="text-destructive">{error}</p>}
-            {error === null && users === null && (
+            {isPending && (
               <p className="text-muted-foreground">Loading users…</p>
             )}
-            {users !== null && (
+            {error && <p className="text-destructive">{error.message}</p>}
+            {users && (
               <Table>
                 <TableHeader>
                   <TableRow>
