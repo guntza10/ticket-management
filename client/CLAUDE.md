@@ -10,6 +10,7 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - **shadcn/ui** (Radix + cva + tailwind-merge + lucide-react)
 - **React Router 8** — declarative mode (`BrowserRouter` + `<Routes>`)
 - **react-hook-form + zod** (via `@hookform/resolvers/zod`) for forms
+- **axios** + **TanStack Query** (`@tanstack/react-query`) for data fetching
 - **better-auth** React client (`better-auth/react`)
 
 ## Commands (from repo root)
@@ -44,14 +45,20 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - **Forms:** react-hook-form + a zod schema (`zodResolver`). One schema is the source of
   truth for both the rules and the type (`z.infer`). zod v4 → top-level `z.email()`.
 - **Auth:** go through `src/lib/auth-client.ts` (`signIn` / `signOut` / `useSession`).
-- **API base URL:** one export, `API_URL` in `src/lib/api.ts` (from `VITE_API_URL`;
-  `.env` gitignored, `.env.example` committed). The auth client reads it too — don't
-  re-read the env var elsewhere or half the app can end up on a different server.
-- **Data fetching:** plain `fetch` in a `useEffect` (no query library yet). Every call
-  needs `credentials: "include"` — the API is cross-origin, so without it the browser
-  sends no session cookie and the server answers 401. `fetch` rejects only on network
-  failure, so **check `response.ok` yourself**; a 403 is a successful exchange. Abort on
-  cleanup (`AbortController`) — StrictMode runs effects twice in dev.
+- **API calls:** use the `api` axios instance from `src/lib/api.ts` — never a bare
+  `fetch`. It carries `baseURL` and `withCredentials: true`; the API is cross-origin, so
+  a call without the session cookie answers 401, and setting that per call is what gets
+  forgotten on one endpoint out of twenty. axios also rejects on 4xx/5xx where `fetch`
+  resolves, so there is no `response.ok` check to write. `API_URL` is still exported
+  because the auth client reads it — don't re-read `VITE_API_URL` anywhere else, or half
+  the app can end up on a different server (`.env` gitignored, `.env.example` committed).
+- **Data fetching:** `useQuery`, not `useState` + `useEffect`. The `queryClient` is
+  created at module scope in `main.tsx` so the cache outlives any component. Forward the
+  `signal` React Query passes the query function straight to axios — React Query aborts
+  it on unmount, which is why dev shows the first request as cancelled (StrictMode runs
+  effects twice). `queryKey` is the cache's identity, not a label: name the same key to
+  invalidate after a mutation. Background: `_resources/knowledge/axios.md` and
+  `tanstack-query.md`.
 - **Test mode:** `npm run dev:test` = `vite --mode test --port 5174 --strictPort`, which
   loads the committed `.env.test` (secret-free — just `VITE_API_URL=http://localhost:3001`).
   Mode-specific env files override `.env`, so this is how the Playwright run points the
@@ -63,4 +70,4 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 
 - `src/pages/` — route pages (`LoginPage`, `HomePage`, `UsersPage`)
 - `src/components/` — app components; `src/components/ui/` — shadcn (generated)
-- `src/lib/` — `auth-client.ts`, `api.ts` (API base URL), `utils.ts` (shadcn `cn`)
+- `src/lib/` — `auth-client.ts`, `api.ts` (`API_URL` + the `api` axios instance), `utils.ts` (shadcn `cn`)
