@@ -21,7 +21,7 @@ Express API (`server/`) over CORS with cookie-based sessions.
 
 - **Node.js 24+** — the server runs TypeScript natively (type stripping), no build step
 - **npm 10+**
-- **PostgreSQL** running on `localhost:5432` with a database named `ticket_management`
+- **PostgreSQL** running on `localhost:5433` with a database named `ticket_management`
 
 ## Setup
 

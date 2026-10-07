@@ -70,7 +70,7 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
 
 ## Database
 
-- PostgreSQL on **localhost:5432**, DB `ticket_management`; `DATABASE_URL` in `.env`.
+- PostgreSQL on **localhost:5433**, DB `ticket_management`; `DATABASE_URL` in `.env`.
 - Start your local Postgres before running the server or any `db:*` script.
 - **Test DB:** `ticket_management_test` on the same server, configured by `.env.test`
   (gitignored; `.env.test.example` is committed). Only the Playwright run touches it.

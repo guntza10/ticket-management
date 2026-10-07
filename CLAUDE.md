@@ -27,7 +27,7 @@ resolve tickets; admins additionally manage agent accounts and roles. Monorepo v
 
 - Node.js **24+** — the server runs TypeScript natively (type stripping), no build step
 - npm 10+
-- PostgreSQL on **localhost:5432** (DB `ticket_management`) — see `server/CLAUDE.md`
+- PostgreSQL on **localhost:5433** (DB `ticket_management`) — see `server/CLAUDE.md`
 
 ## Commands
 

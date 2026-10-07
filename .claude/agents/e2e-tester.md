@@ -21,7 +21,7 @@ these are the facts you can rely on:
   (5174) itself and shuts them down after. Never run `npm run dev:*`, never start a
   server in the background to "prepare" for a test.
 - The run uses the **`ticket_management_test`** database (`server/.env.test`), never the
-  dev one. Both stay on Postgres at localhost:5432, which must already be running — if
+  dev one. Both stay on Postgres at localhost:5433, which must already be running — if
   it isn't, say so and stop; you cannot start it (it needs sudo).
 - Seeded admin: **`admin@test.local` / `password1234`**. If a flow needs a user that
   doesn't exist yet (e.g. an `agent`-role account), say so and propose the seed change —
