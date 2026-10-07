@@ -105,7 +105,7 @@ server enables CORS (client origin + credentials). Details in the workspace file
 
 - Built **one phase per session** (phases are defined in the implementation plan).
 - Branch: `main`. Commits follow **Conventional Commits**: `type: imperative subject` (≤50 chars, no trailing period), a blank line, then a body wrapped at ~72 cols explaining *why*. Types in use: `feat`, `fix`, `docs`, `chore`, `build`, `refactor`, `test`. End the body with the `Co-Authored-By` trailer.
-- Keep the CLAUDE.md files current: add conventions as they become real (not speculative); put workspace-specific rules in the workspace file, shared rules here.
+- Keep the CLAUDE.md files current. Add a convention when it becomes real (not speculative), and **correct one in the same commit that makes it wrong** — a file still documenting a pattern the code no longer uses is worse than one that never mentioned it, because it actively instructs the next reader. Put workspace-specific rules in the workspace file, shared rules here.
 
 ## Status
 
