@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 
 // Mirrors the `select` in GET /api/users. createdAt is a string, not a Date:
@@ -51,11 +52,18 @@ export default function UsersPage() {
             <CardTitle>Users</CardTitle>
           </CardHeader>
           <CardContent>
-            {isPending && (
-              <p className="text-muted-foreground">Loading users…</p>
+            {/* The error sits above the table instead of replacing it. A failed
+                background refetch still leaves the previous rows on screen and
+                usable — discarding them is the opposite of why the cache is
+                here. Only a first load, which has no rows yet, shows the error
+                alone. */}
+            {error && (
+              <p className="text-destructive mb-4">{error.message}</p>
             )}
-            {error && <p className="text-destructive">{error.message}</p>}
-            {users && (
+            {(isPending || users) && (
+              // The header is real even while loading: it is static content, and
+              // rendering it up front is what keeps the skeleton the same shape
+              // as the table that replaces it, so nothing shifts.
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -66,7 +74,35 @@ export default function UsersPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((user) => (
+                  {/* Three placeholder rows — a guess at the roster size, which
+                      is fine, since the point is only to hold the shape. */}
+                  {isPending &&
+                    Array.from({ length: 3 }, (_, i) => (
+                      <TableRow key={i}>
+                        <TableCell>
+                          <Skeleton className="h-4 w-28" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-44" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-14" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-20" />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  {/* colSpan must match the header count above — a new column
+                      added there has to be counted here too. */}
+                  {users?.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-muted-foreground">
+                        No users found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {users?.map((user) => (
                     <TableRow key={user.id}>
                       <TableCell>{user.name}</TableCell>
                       <TableCell>{user.email}</TableCell>

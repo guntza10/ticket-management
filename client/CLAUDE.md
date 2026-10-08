@@ -46,6 +46,16 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     generates components that way, so there is no local utils file to keep in sync.
     It is a compiled drop-in for `clsx` + `tailwind-merge`, which were removed with it.
     Don't "fix" a generated import back to `@/lib/utils`.
+- **Loading states — three shapes, and only one of them is a skeleton:**
+  - **Content that will fill a known layout** → `Skeleton` inside that layout.
+    `UsersPage` renders the real table header plus skeleton rows, so the data replaces
+    them without shifting anything. A skeleton whose shape doesn't match what arrives
+    is a spinner with extra steps — match the real thing or don't bother.
+  - **A button doing work** → keep the button, `disabled` + a present-tense label
+    (`LoginPage`: "Signing in…"). Never swap a button for a skeleton.
+  - **A sub-100ms transient before we even know what to render** → plain text, or
+    nothing. `ProtectedRoute` waits out the session request this way; a skeleton there
+    would flash and read as breakage.
 - **Forms:** react-hook-form + a zod schema (`zodResolver`). One schema is the source of
   truth for both the rules and the type (`z.infer`). zod v4 → top-level `z.email()`.
 - **Auth:** go through `src/lib/auth-client.ts` (`signIn` / `signOut` / `useSession`).
