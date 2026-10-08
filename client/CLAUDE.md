@@ -7,7 +7,7 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 
 - **React 19** + **TypeScript** (Vite 8, `@vitejs/plugin-react`)
 - **Tailwind v4** (CSS-first, `@tailwindcss/vite`)
-- **shadcn/ui** (Radix + cva + tailwind-merge + lucide-react)
+- **shadcn/ui** (Radix + cva + `cn` + lucide-react)
 - **React Router 8** — declarative mode (`BrowserRouter` + `<Routes>`)
 - **react-hook-form + zod** (via `@hookform/resolvers/zod`) for forms
 - **axios** + **TanStack Query** (`@tanstack/react-query`) for data fetching
@@ -42,6 +42,10 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     **layout/sizing** classes (`w-full`, `max-w-sm`, positioning). Use `variant`/`size`
     for looks — not custom color/border/padding overrides.
   - Signal field errors with `aria-invalid` (built-in destructive styling), not custom CSS.
+  - **`cn` comes from the `cn` package**, not a local `@/lib/utils` — shadcn 4.x
+    generates components that way, so there is no local utils file to keep in sync.
+    It is a compiled drop-in for `clsx` + `tailwind-merge`, which were removed with it.
+    Don't "fix" a generated import back to `@/lib/utils`.
 - **Forms:** react-hook-form + a zod schema (`zodResolver`). One schema is the source of
   truth for both the rules and the type (`z.infer`). zod v4 → top-level `z.email()`.
 - **Auth:** go through `src/lib/auth-client.ts` (`signIn` / `signOut` / `useSession`).
@@ -70,4 +74,4 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 
 - `src/pages/` — route pages (`LoginPage`, `HomePage`, `UsersPage`)
 - `src/components/` — app components; `src/components/ui/` — shadcn (generated)
-- `src/lib/` — `auth-client.ts`, `api.ts` (`API_URL` + the `api` axios instance), `utils.ts` (shadcn `cn`)
+- `src/lib/` — `auth-client.ts`, `api.ts` (`API_URL` + the `api` axios instance)
