@@ -149,9 +149,10 @@ server enables CORS (client origin + credentials). Details in the workspace file
   an agent gets 403 from the API and is bounced off the route. Create / edit / delete are
   still open (Phase 3).
 - ✅ **E2E** — Playwright against a dedicated `ticket_management_test` DB and test ports;
-  **45 specs covering the whole auth system** (sign-in, validation, route protection,
-  session lifecycle, the auth API, cookie/CORS/CSRF properties). Every run migrates,
-  truncates and re-seeds itself.
+  **48 specs** — the auth system end to end (sign-in, validation, route protection,
+  session lifecycle, cookie/CORS/CSRF properties) plus **9 API-level specs** that skip the
+  browser and call the server directly, including `GET /api/users` (401 / 403 / 200 and
+  its field allow-list). Every run migrates, truncates and re-seeds itself.
 - ✅ **Component tests** — Vitest + Testing Library, **9 specs**. `UsersPage` covers all
   four render states (loading, rows, empty, error) and `ProtectedRoute` all four branches
   (loading, signed out, wrong role, allowed). Four of those states are ones E2E cannot
@@ -167,9 +168,8 @@ is what will make it start hurting; revisit when you hit it.
 | Gap | Trigger | What to do |
 | --- | --- | --- |
 | **Specs run 5-way parallel against one shared test DB.** Safe today only because no spec touches data another spec can see — each just signs in and reads its own session. | The first spec that creates or counts domain rows, i.e. **the tickets domain**. | Give each test its own data (unique subjects per worker) — or, as a blunt fallback, set `workers: 1` in `playwright.config.ts`. Decide before writing ticket specs, not after they go flaky. |
-| **Server-side role authorization has no spec.** `requireAdmin` is implemented and was verified by hand (curl + a real browser: agent → 403), but the suite still only proves the *client* routes an agent away from `/users`. | Now — the code exists, so nothing stops a regression from going unnoticed. | Add an API-level spec: agent session → `GET /api/users` → 403, and an admin session → 200 with the expected rows. |
 | **`GET /api/users` returns every user, unpaginated.** Fine at three rows. | A real agent roster (dozens+), or a page that has to scroll forever. | Add `take`/`skip` (or cursor) + a total count, and paginate the table. |
 | **No catch-all route.** `App.tsx` has `/login`, `/`, `/users` and nothing else, so an unknown URL renders a blank page. | Anyone mistyping a URL; more so once there are more routes. | Add a `*` route with a 404 page, then a spec for it. |
 | **No "return to intended page" after sign-in.** A signed-out visit to `/users` lands on `/` after login, not `/users`. | Deep links being shared, or any flow that sends users to a specific page. | Have `ProtectedRoute` record the attempted path and `LoginPage` honour it. |
 | **`CardTitle` renders a `div`, not a heading.** Screen readers find no page headings; specs assert body copy instead of `getByRole("heading")`. | Any accessibility pass. | Render page titles as real headings, then switch those assertions over. |
-| **The suite is top-heavy** — 45 specs at the E2E layer (6 of them API-level), 9 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |
+| **The suite is top-heavy** — 48 specs at the E2E layer (9 of them API-level), 9 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |

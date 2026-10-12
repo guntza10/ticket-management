@@ -1,8 +1,12 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
-// The E2E API. Specs that talk HTTP directly (auth-api.spec.ts) need the
-// absolute URL, because `baseURL` in the config points at the SPA on 5174.
+// The E2E API. Specs that talk HTTP directly need the absolute URL, because
+// `baseURL` in the config points at the SPA on 5174.
 export const API_URL = "http://localhost:3001";
+
+// Specs that bypass the browser still have to present the SPA's origin, or
+// better-auth's CSRF gate refuses the call before any credential is checked.
+export const CLIENT_ORIGIN = "http://localhost:5174";
 
 // Seeded by `npm run db:seed:test --workspace server` (server/.env.test).
 export const ADMIN = {
@@ -47,4 +51,22 @@ export async function signIn(page: Page, credentials: Credentials) {
   await submitLogin(page, credentials);
   await expect(page).toHaveURL("/");
   await expect(page.getByText("You are signed in.")).toBeVisible();
+}
+
+/**
+ * Signs in over HTTP, leaving the session cookie on the request context so the
+ * calls that follow are authenticated. Asserts the sign-in itself succeeded —
+ * a spec about authorization should fail on the line that broke, not three
+ * lines later on a confusing 401.
+ */
+export async function signInViaApi(
+  request: APIRequestContext,
+  credentials: Credentials,
+) {
+  const response = await request.post(`${API_URL}/api/auth/sign-in/email`, {
+    headers: { origin: CLIENT_ORIGIN },
+    data: { email: credentials.email, password: credentials.password },
+  });
+
+  expect(response.status()).toBe(200);
 }

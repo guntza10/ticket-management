@@ -1,8 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { ADMIN, AGENT, API_URL } from "./support/auth";
-
-// API-level calls present the SPA's origin the way the browser would.
-const CLIENT_ORIGIN = "http://localhost:5174";
+import { ADMIN, AGENT, API_URL, CLIENT_ORIGIN } from "./support/auth";
 
 test.describe("Auth API — /api/me", () => {
   test("GET /api/me is 401 without a session", async ({ request }) => {
