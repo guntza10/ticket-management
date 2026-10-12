@@ -16,7 +16,8 @@
     "test:e2e:ui": "playwright test --ui",
     "lint:e2e": "oxlint",
     "pretest:e2e": "playwright install chromium",
-    "pretest:e2e:ui": "playwright install chromium"
+    "pretest:e2e:ui": "playwright install chromium",
+    "test:client": "npm run test --workspace client"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",

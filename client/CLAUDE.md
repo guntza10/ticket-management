@@ -12,12 +12,14 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - **react-hook-form + zod** (via `@hookform/resolvers/zod`) for forms
 - **axios** + **TanStack Query** (`@tanstack/react-query`) for data fetching
 - **better-auth** React client (`better-auth/react`)
+- **Vitest** + **React Testing Library** + `jest-dom` (component tests, jsdom)
 
 ## Commands (from repo root)
 
 - `npm run dev:client` — Vite dev server → http://localhost:5173
 - `npm run build:client` — `tsc -b && vite build`
 - `npm run lint --workspace client` — oxlint
+- `npm run test:client` — Vitest, one pass; `npm run test:watch --workspace client` to iterate
 
 ## Conventions
 
@@ -77,6 +79,28 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   loads the committed `.env.test` (secret-free — just `VITE_API_URL=http://localhost:3001`).
   Mode-specific env files override `.env`, so this is how the Playwright run points the
   SPA at the test API instead of the dev one.
+- **Component tests:** Vitest + Testing Library, co-located as `Thing.test.tsx` next
+  to `Thing.tsx`. Config lives in the `test` block of `vite.config.ts`; `src/test/setup.ts`
+  loads the `jest-dom` matchers and runs `cleanup` after each test (Vitest runs without
+  `globals`, so Testing Library's own cleanup hook never installs itself).
+  - **Query by role, the way a user finds things** — `getByRole("cell", { name })`, not a
+    class or a `data-slot`. Assertions written against markup pass while the page is
+    broken; `UsersPage.test.tsx` counts `role="row"` to prove the skeleton holds the
+    table's shape.
+  - **Mock the boundaries only.** Fake `@/lib/api` and `@/lib/auth-client` — the modules
+    that reach a server. Keep `QueryClientProvider` and `MemoryRouter` real: a fake
+    router proves nothing and costs the same.
+  - **A fresh `QueryClient` per test, with `retry: false`.** The app's cache is
+    module-scope on purpose; in a test that is a leak, where one test's rows answer the
+    next test's query. Retries only delay the failure the test exists to read.
+  - **Test what E2E cannot stage** — the empty list, the rejected request, the request
+    still in flight. The seeded database always has users and the server does not fail on
+    request, so those states have no other way to be proven. `ProtectedRoute`'s
+    "Loading…" is the clearest case: in a browser it is gone in under 100ms and any
+    assertion races the session request, but a faked `useSession` can hold it still.
+  - **Assert where a redirect lands, not that nothing rendered.** `ProtectedRoute.test.tsx`
+    wraps the subject in a small `<Routes>` table so `<Navigate>` arrives somewhere with
+    readable text — otherwise a test cannot tell "sent home" from "sent to login".
 - **Routing:** declarative; guard private routes with `ProtectedRoute`, which waits out
   `useSession().isPending` before redirecting (avoids bouncing a logged-in user).
 
@@ -85,3 +109,4 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - `src/pages/` — route pages (`LoginPage`, `HomePage`, `UsersPage`)
 - `src/components/` — app components; `src/components/ui/` — shadcn (generated)
 - `src/lib/` — `auth-client.ts`, `api.ts` (`API_URL` + the `api` axios instance)
+- `src/test/setup.ts` — Vitest setup (jest-dom matchers + per-test cleanup)

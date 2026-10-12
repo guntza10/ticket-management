@@ -14,7 +14,7 @@ import { api } from "@/lib/api";
 
 // Mirrors the `select` in GET /api/users. createdAt is a string, not a Date:
 // JSON has no date type, so Prisma's DateTime arrives here as an ISO string.
-type UserRow = {
+export type UserRow = {
   id: string;
   name: string;
   email: string;

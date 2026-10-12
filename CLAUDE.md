@@ -21,7 +21,7 @@ resolve tickets; admins additionally manage agent accounts and roles. Monorepo v
 | Client | React 19, TypeScript, Vite 8, Tailwind v4, React Router 8 (declarative), react-hook-form + zod, shadcn/ui, axios + TanStack Query, better-auth client |
 | Server | Express 5, Node 24 (native TS), Prisma 7 + PostgreSQL, better-auth |
 | E2E | Playwright (repo root: `playwright.config.ts` + `e2e/`) |
-| Tooling | npm workspaces, oxlint (client), Vitest (planned) |
+| Tooling | npm workspaces, oxlint (client), Vitest + React Testing Library (client) |
 
 ## Prerequisites
 
@@ -39,6 +39,7 @@ Run from the repo root:
 - `npm run build:client` — type-check + build the client
 - `npm run typecheck:server` — type-check the server
 - `npm run lint --workspace client` — lint the client (oxlint)
+- `npm run test:client` — Vitest component tests (add `-- --watch` to iterate)
 - `npm run test:e2e` / `test:e2e:ui` — Playwright (starts its own servers; see **Testing**)
 - `npm run lint:e2e` / `typecheck:e2e` — gates for `playwright.config.ts` + `e2e/`
 
@@ -61,6 +62,29 @@ server enables CORS (client origin + credentials). Details in the workspace file
 - **Clean TypeScript is enforced** on every `.ts`/`.tsx` edit by a `PostToolUse` hook (`.claude/hooks/ts-check.sh`) that runs oxlint + `tsc` for the touched workspace and reports failures back. Rule sets live in the workspace files. This is the **objective** layer (deterministic, hard gate).
 - **Subjective clean-code** (naming, single-responsibility, abstraction, readability) — what the linter can't judge — is reviewed by the **`clean-code-reviewer` subagent**. Invoke it after writing a meaningful chunk of TS (a component / module / feature) or before a commit — **not** on every edit (a per-edit LLM review is slow and can loop). It's read-only; apply its findings yourself.
 - **Reusable setup kit:** generalizable governance/config (the clean-TS hook, reviewer agents, lint/tsconfig) is captured in `~/Desktop/Practice/_setup-kit/`. When a new reusable piece is built here — e.g. the **Playwright + testing-agent** testing layer (course lessons 16–20) — `cp` it into the kit's `templates/` and note it in the kit's README.
+
+## Testing (component)
+
+- **Vitest + React Testing Library**, configured in the `test` block of
+  `client/vite.config.ts` rather than a separate `vitest.config.ts`, so a test resolves
+  imports through the same plugins and the same `@/` alias the app does. A run that
+  resolved them differently would be testing something the app never executes.
+- **Co-located** next to the subject (`src/pages/UsersPage.test.tsx`). `test.include` is
+  scoped to `src/**/*.test.{ts,tsx}` so Vitest never collects `e2e/*.spec.ts`, which
+  needs a real browser.
+- **`globals` is off on purpose** — `describe` / `it` / `expect` / `vi` are imported like
+  any other binding, which keeps `tsconfig` free of a `types` entry that exists only to
+  describe magic. The cost is that Testing Library's automatic cleanup never registers
+  itself, so `src/test/setup.ts` calls `cleanup` in an explicit `afterEach`.
+- **Which layer gets a test:** a component test owns the states the real stack will not
+  produce on demand — an empty list, a rejected request, a request still in flight. E2E
+  owns the proof that the pieces are wired to each other at all. Choose by the question
+  being asked, not by which is easier to write.
+- **Mock the boundaries, not the internals.** `UsersPage.test.tsx` fakes `@/lib/api` and
+  `@/lib/auth-client` — the two modules that talk to a server — and renders the real
+  `QueryClientProvider` and a real `MemoryRouter`. A fresh `QueryClient` per test with
+  `retry: false`: the module-scope cache that the app wants is the one thing a test must
+  not share, and a retry only delays the failure the test is there to read.
 
 ## Testing (E2E)
 
@@ -128,6 +152,11 @@ server enables CORS (client origin + credentials). Details in the workspace file
   **45 specs covering the whole auth system** (sign-in, validation, route protection,
   session lifecycle, the auth API, cookie/CORS/CSRF properties). Every run migrates,
   truncates and re-seeds itself.
+- ✅ **Component tests** — Vitest + Testing Library, **9 specs**. `UsersPage` covers all
+  four render states (loading, rows, empty, error) and `ProtectedRoute` all four branches
+  (loading, signed out, wrong role, allowed). Four of those states are ones E2E cannot
+  stage: the server will not return an empty roster or fail on request, and the loading
+  states are gone before an assertion can land on them.
 - ⏭️ **Next** — the rest of Phase 3 (create / edit / delete a user), then the tickets domain (schema + API + UI).
 
 ## Known gaps — deliberately deferred
@@ -143,4 +172,4 @@ is what will make it start hurting; revisit when you hit it.
 | **No catch-all route.** `App.tsx` has `/login`, `/`, `/users` and nothing else, so an unknown URL renders a blank page. | Anyone mistyping a URL; more so once there are more routes. | Add a `*` route with a 404 page, then a spec for it. |
 | **No "return to intended page" after sign-in.** A signed-out visit to `/users` lands on `/` after login, not `/users`. | Deep links being shared, or any flow that sends users to a specific page. | Have `ProtectedRoute` record the attempted path and `LoginPage` honour it. |
 | **`CardTitle` renders a `div`, not a heading.** Screen readers find no page headings; specs assert body copy instead of `getByRole("heading")`. | Any accessibility pass. | Render page titles as real headings, then switch those assertions over. |
-| **`ProtectedRoute`'s "Loading…" state is untested.** | — | Left alone on purpose: it's a sub-100ms transient and any assertion on it races the session request. |
+| **The suite is top-heavy** — 45 specs at the E2E layer (6 of them API-level), 9 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |
