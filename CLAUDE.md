@@ -130,6 +130,34 @@ server enables CORS (client origin + credentials). Details in the workspace file
   It reports app bugs instead of patching them; applying the fix is on you. How it works
   and the rules it follows live in its own file, not here.
 
+## Which test a change needs
+
+Testing is part of finishing a change, not a decision to weigh afterwards. Read the
+table, do what it says, don't ask.
+
+| The change | The test it needs |
+| --- | --- |
+| A new or changed **endpoint** | an API spec (`e2e/*-api.spec.ts`): status codes **and** the field set of what it returns |
+| A new or changed **component that renders more than one way** | a component test beside it |
+| A new or changed **flow a user walks through** | an E2E spec |
+| A **bug fix** | a test that fails *before* the fix — every time, no exceptions. One that passes before the fix means the cause was misdiagnosed. |
+| Static markup, generated files, renames, config | nothing |
+
+A component that renders exactly one way needs no test (`HomePage`), and behaviour another
+layer already proves needs no second test (`PasswordInput`'s toggle is clicked in
+`login.spec.ts`). **Size is not the criterion:** `ProtectedRoute` is tiny and has four
+branches; `HomePage` is a whole page and has none.
+
+**Prove a new test can fail.** Break the code it guards, watch that one test go red,
+restore. A test written against already-passing code can assert nothing at all and nobody
+finds out — which is exactly how `route-protection.spec.ts` ended up checking for a
+sentence the page no longer had.
+
+**Running them:** before proposing a commit that touched `client/`, run
+`npm run test:client`. Run `npm run test:e2e` when the change could affect a flow a user
+walks through — it needs Postgres up, so check first and say so if it isn't. Never report
+a suite as passing without having run it; "should pass" is not a result.
+
 ## Workflow
 
 - Built **one phase per session** (phases are defined in the implementation plan).
