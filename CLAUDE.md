@@ -95,6 +95,11 @@ server enables CORS (client origin + credentials). Details in the workspace file
   tests sign in far more often than a person and would collect 429s.
 - The root `tsconfig.json` + `.oxlintrc.json` exist **only** to gate `e2e/` and
   `playwright.config.ts`; the `ts-check.sh` hook routes root TS edits to them.
+- **A spec is only as good as what it asserts.** `route-protection.spec.ts` used to
+  check for a placeholder sentence instead of the table's rows; the commit that put
+  the real table in removed that sentence and never touched the spec, so two tests
+  went red and a third kept passing for the wrong reason. Assert on the data that
+  makes the page correct — page chrome proves only that something rendered.
 - **Writing specs is delegated to the `e2e-tester` subagent** — give it a flow in plain
   words. Invoke it only once the feature's UI is wired up and **manually working**: it
   iterates against a real browser, so a half-built page burns turns rediscovering that.
