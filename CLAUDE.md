@@ -184,15 +184,18 @@ a suite as passing without having run it; "should pass" is not a result.
   `/sign-in/email` looks a user up by `email.toLowerCase()`. Edit / delete are still
   open (Phase 3).
 - ✅ **E2E** — Playwright against a dedicated `ticket_management_test` DB and test ports;
-  **48 specs** — the auth system end to end (sign-in, validation, route protection,
-  session lifecycle, cookie/CORS/CSRF properties) plus **9 API-level specs** that skip the
-  browser and call the server directly, including `GET /api/users` (401 / 403 / 200 and
-  its field allow-list). Every run migrates, truncates and re-seeds itself.
-- ✅ **Component tests** — Vitest + Testing Library, **9 specs**. `UsersPage` covers all
-  four render states (loading, rows, empty, error) and `ProtectedRoute` all four branches
-  (loading, signed out, wrong role, allowed). Four of those states are ones E2E cannot
-  stage: the server will not return an empty roster or fail on request, and the loading
-  states are gone before an assertion can land on them.
+  **59 specs** — the auth system end to end (sign-in, validation, route protection,
+  session lifecycle, cookie/CORS/CSRF properties) plus **17 API-level specs** that skip
+  the browser and call the server directly, covering `/api/users` on both verbs: who may
+  read and who may create, the field allow-list on each answer, and what a create
+  refuses. Every run migrates, truncates and re-seeds itself.
+- ✅ **Component tests** — Vitest + Testing Library, **16 specs**. `UsersPage` covers all
+  four render states (loading, rows, empty, error), `ProtectedRoute` all four branches
+  (loading, signed out, wrong role, allowed), and `CreateUserForm` its validation, its
+  payload, both failure messages, the invalidation, and that it waits for the refetch
+  before reporting success. Several of those states are ones E2E cannot stage: the server
+  will not return an empty roster or fail on request, and the loading states are gone
+  before an assertion can land on them.
 - ⏭️ **Next** — the rest of Phase 3 (create / edit / delete a user), then the tickets domain (schema + API + UI).
 
 ## Known gaps — deliberately deferred
@@ -202,10 +205,10 @@ is what will make it start hurting; revisit when you hit it.
 
 | Gap | Trigger | What to do |
 | --- | --- | --- |
-| **Specs run 5-way parallel against one shared test DB.** Safe today only because no spec touches data another spec can see — each just signs in and reads its own session. | The first spec that creates or counts domain rows, i.e. **the tickets domain**. | Give each test its own data (unique subjects per worker) — or, as a blunt fallback, set `workers: 1` in `playwright.config.ts`. Decide before writing ticket specs, not after they go flaky. |
+| **Specs run 5-way parallel against one shared test DB,** and `globalSetup` truncates once per run rather than per spec — so a row one worker creates is visible to every other. | **Already fired**, with create-user. | Resolved without `workers: 1`: every created row takes its address from `newUserEmail()` in `e2e/support/users.ts` (a UUID — five workers can share a millisecond), and no spec asserts a roster length, count or order. Keep both rules when adding specs that write. |
 | **`POST /api/users` has no rate limit.** Better Auth's limiter covers `/api/auth/*` only, so nothing throttles account creation. Low risk while the route is admin-only and sign-up is disabled. | A second admin-reachable write endpoint, or any sign that an admin session could be hijacked. | Put a limiter in front of the app's own mutating routes rather than bolting one onto this endpoint. |
 | **`GET /api/users` returns every user, unpaginated.** Fine at three rows. | A real agent roster (dozens+), or a page that has to scroll forever. | Add `take`/`skip` (or cursor) + a total count, and paginate the table. |
 | **No catch-all route.** `App.tsx` has `/login`, `/`, `/users` and nothing else, so an unknown URL renders a blank page. | Anyone mistyping a URL; more so once there are more routes. | Add a `*` route with a 404 page, then a spec for it. |
 | **No "return to intended page" after sign-in.** A signed-out visit to `/users` lands on `/` after login, not `/users`. | Deep links being shared, or any flow that sends users to a specific page. | Have `ProtectedRoute` record the attempted path and `LoginPage` honour it. |
 | **`CardTitle` renders a `div`, not a heading.** Screen readers find no page headings; specs assert body copy instead of `getByRole("heading")`. | Any accessibility pass. | Render page titles as real headings, then switch those assertions over. |
-| **The suite is top-heavy** — 48 specs at the E2E layer (9 of them API-level), 9 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |
+| **The suite is top-heavy** — 59 specs at the E2E layer (17 of them API-level), 16 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |

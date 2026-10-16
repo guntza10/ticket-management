@@ -91,6 +91,10 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   ["users"] })` — returning it makes `mutateAsync` settle only after the roster has
   refetched, so the dialog closes onto a table that already holds the new row instead of
   racing it. Name a different key and the table keeps showing the roster from before.
+  The `return` is guarded by *"waits for the roster to refetch before reporting success"*
+  in `CreateUserForm.test.tsx`, which holds the refetch open and asserts the form has not
+  reported success yet — nothing else catches it, because every other assertion sees both
+  calls happen whichever order they run in.
 - **Server errors from a mutation go through `setError`, not a second dialog.** A 409
   becomes `setError("email", …)`: it lands in the field-error markup that already
   exists, lights `aria-invalid` for free, and react-hook-form clears it on the next

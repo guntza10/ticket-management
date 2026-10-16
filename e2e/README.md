@@ -2,7 +2,7 @@
 
 Playwright specs live here as `*.spec.ts`. Config: [`../playwright.config.ts`](../playwright.config.ts).
 
-Current specs (authentication):
+Current specs:
 
 - `login.spec.ts` — sign-in happy path, inline form validation, rejected
   credentials (error dialog), the password show/hide toggle
@@ -15,19 +15,38 @@ Current specs (authentication):
 - `security.spec.ts` — the session cookie is httpOnly and signature-checked, plus the
   two origin gates side by side: CORS answers a foreign origin without granting it
   read permission, while `trustedOrigins` refuses it outright with 403
+- `users-api.spec.ts` — `/api/users` without a browser: who may read the roster and
+  who may create, the field allow-list on both answers, and what a create refuses
+  (duplicate address, short password, malformed email)
+- `create-user.spec.ts` — the admin creates an agent through the dialog, the row
+  appears without a reload, a taken address reports inline, and the new account can
+  really sign in
 
 The `trustedOrigins` tests only work because `server/src/auth.ts` sets
 `advanced: { disableOriginCheck: false }`. Better Auth otherwise defaults that check
 off when `NODE_ENV=test` — exactly what the E2E run sets — which would leave the gate
 silently absent and untestable. Don't remove that line.
 
-`support/auth.ts` holds the seeded credentials and the shared login locators
-(it is not a spec, so Playwright does not collect it).
+`support/auth.ts` holds the seeded credentials and the shared login locators, and
+`support/users.ts` the helper that names a row a spec is about to create. Neither is a
+spec, so Playwright does not collect them.
 
 `global-setup.ts` migrates, truncates, then re-seeds `ticket_management_test` before
-every run, so a spec may assume exactly the two seeded accounts and nothing else.
-Without it each sign-in left a session row behind for good, and anything that counted
-rows would have passed or failed based on how often the suite had been run before.
+every run. Without it each sign-in left a session row behind for good, and anything
+that counted rows would have passed or failed based on how often the suite had been
+run before.
+
+**A spec may assume the two seeded accounts exist — not that they are the only ones.**
+That changed when create-user landed: the run is `fullyParallel` across five workers
+against this one database, truncation happens once per run rather than per spec, so
+any row another worker creates is visible here. Two rules follow, and both are load
+bearing:
+
+1. Name every row you create with `newUserEmail()` from `support/users.ts`. It uses a
+   UUID, not a timestamp, because five workers can start inside the same millisecond.
+2. Never assert a roster length, a row count or an ordering. Assert that the rows you
+   care about are present — `users-api.spec.ts` uses `expect.arrayContaining` and a
+   per-row key-set loop for exactly this reason.
 
 ## Running
 

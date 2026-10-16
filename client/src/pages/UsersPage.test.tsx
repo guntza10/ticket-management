@@ -9,9 +9,11 @@ import UsersPage, { type UserRow } from "@/pages/UsersPage";
 // UsersPage reaches the server through this module, so a fake takes its place:
 // the test, not a running API, decides what comes back. That is what buys the
 // two states below that no real server hands over on request — an empty roster
-// and an outright failure. Only `get` is here because only `get` is called.
+// and an outright failure. `post` is here because the page now renders
+// CreateUserDialog, whose form reaches the same module — no test below
+// triggers it, but a fake should describe what the subtree can call.
 vi.mock("@/lib/api", () => ({
-  api: { get: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn() },
 }));
 
 // NavBar renders inside UsersPage and asks this module who is signed in. The
