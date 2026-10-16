@@ -173,9 +173,16 @@ a suite as passing without having run it; "should pass" is not a result.
   `requireAdmin` → 403. Client: `ProtectedRoute role="admin"` + a NavLink only admins see
   (UX layer; the server is the one that actually refuses).
 - ✅ **User list** — `GET /api/users` (admin-only, field allow-list) rendered as a
-  read-only shadcn table on `/users`. Verified in a real browser: admin sees the rows,
-  an agent gets 403 from the API and is bounced off the route. Create / edit / delete are
-  still open (Phase 3).
+  shadcn table on `/users`. Verified in a real browser: admin sees the rows, an agent
+  gets 403 from the API and is bounced off the route.
+- ✅ **Create user** — `POST /api/users` (admin-only) behind a dialog on `/users`.
+  Public sign-up is disabled, so the endpoint writes the `user` + credential `account`
+  pair itself, in one transaction, through `server/src/users/create-user.ts` — the same
+  function `prisma/seed.ts` now uses, because a disagreement about `providerId` or the
+  hasher produces an account that is created successfully and can never sign in. The
+  role is forced to `agent` server-side and the address is lowercased, since
+  `/sign-in/email` looks a user up by `email.toLowerCase()`. Edit / delete are still
+  open (Phase 3).
 - ✅ **E2E** — Playwright against a dedicated `ticket_management_test` DB and test ports;
   **48 specs** — the auth system end to end (sign-in, validation, route protection,
   session lifecycle, cookie/CORS/CSRF properties) plus **9 API-level specs** that skip the
@@ -196,6 +203,7 @@ is what will make it start hurting; revisit when you hit it.
 | Gap | Trigger | What to do |
 | --- | --- | --- |
 | **Specs run 5-way parallel against one shared test DB.** Safe today only because no spec touches data another spec can see — each just signs in and reads its own session. | The first spec that creates or counts domain rows, i.e. **the tickets domain**. | Give each test its own data (unique subjects per worker) — or, as a blunt fallback, set `workers: 1` in `playwright.config.ts`. Decide before writing ticket specs, not after they go flaky. |
+| **`POST /api/users` has no rate limit.** Better Auth's limiter covers `/api/auth/*` only, so nothing throttles account creation. Low risk while the route is admin-only and sign-up is disabled. | A second admin-reachable write endpoint, or any sign that an admin session could be hijacked. | Put a limiter in front of the app's own mutating routes rather than bolting one onto this endpoint. |
 | **`GET /api/users` returns every user, unpaginated.** Fine at three rows. | A real agent roster (dozens+), or a page that has to scroll forever. | Add `take`/`skip` (or cursor) + a total count, and paginate the table. |
 | **No catch-all route.** `App.tsx` has `/login`, `/`, `/users` and nothing else, so an unknown URL renders a blank page. | Anyone mistyping a URL; more so once there are more routes. | Add a `*` route with a 404 page, then a spec for it. |
 | **No "return to intended page" after sign-in.** A signed-out visit to `/users` lands on `/` after login, not `/users`. | Deep links being shared, or any flow that sends users to a specific page. | Have `ProtectedRoute` record the attempted path and `LoginPage` honour it. |

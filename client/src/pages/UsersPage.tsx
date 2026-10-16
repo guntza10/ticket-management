@@ -1,6 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
+import CreateUserDialog from "@/components/CreateUserDialog";
 import NavBar from "@/components/NavBar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -50,6 +57,13 @@ export default function UsersPage() {
         <Card>
           <CardHeader>
             <CardTitle>Users</CardTitle>
+            {/* CardAction is card.tsx's own slot: CardHeader's grid switches to
+                [1fr_auto] when one is present, so the button needs no layout
+                classes. No role check here — the route is already admin-only
+                and the endpoint refuses anyone else regardless. */}
+            <CardAction>
+              <CreateUserDialog />
+            </CardAction>
           </CardHeader>
           <CardContent>
             {/* The error sits above the table instead of replacing it. A failed

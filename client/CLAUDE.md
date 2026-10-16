@@ -60,6 +60,17 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     would flash and read as breakage.
 - **Forms:** react-hook-form + a zod schema (`zodResolver`). One schema is the source of
   truth for both the rules and the type (`z.infer`). zod v4 → top-level `z.email()`.
+  A form's schema is **not** the security boundary — the server re-validates, because
+  anything reachable by fetch is reachable by curl. `CreateUserForm`'s schema is
+  deliberately a copy of `server/src/users/create-user.ts`'s; the API spec
+  *"POST /api/users is 400 when the password is shorter than 8 characters"* is what
+  catches them drifting.
+- **Dialogs that hold a form: controlled Root, form in its own component.** Radix
+  unmounts `DialogContent` on close, so keeping the `useForm` call inside the child means
+  every open starts blank with no `reset()` to remember, and yesterday's error cannot
+  reappear. Keep `open` on the Root (success has to close it from inside); a
+  `DialogTrigger` inside a controlled Root still works — it just calls `onOpenChange`.
+  `CreateUserDialog` + `CreateUserForm` are the pattern.
 - **Auth:** go through `src/lib/auth-client.ts` (`signIn` / `signOut` / `useSession`).
 - **API calls:** use the `api` axios instance from `src/lib/api.ts` — never a bare
   `fetch`. It carries `baseURL` and `withCredentials: true`; the API is cross-origin, so
@@ -75,6 +86,17 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   effects twice). `queryKey` is the cache's identity, not a label: name the same key to
   invalidate after a mutation. Background: `_resources/knowledge/axios.md` and
   `tanstack-query.md`.
+- **Writes: `useMutation`, and invalidate the key the list reads.** `CreateUserForm`
+  posts, then `onSuccess` **returns** `queryClient.invalidateQueries({ queryKey:
+  ["users"] })` — returning it makes `mutateAsync` settle only after the roster has
+  refetched, so the dialog closes onto a table that already holds the new row instead of
+  racing it. Name a different key and the table keeps showing the roster from before.
+- **Server errors from a mutation go through `setError`, not a second dialog.** A 409
+  becomes `setError("email", …)`: it lands in the field-error markup that already
+  exists, lights `aria-invalid` for free, and react-hook-form clears it on the next
+  submit. Anything else becomes `setError("root", …)` above the footer. `ErrorDialog`
+  stays for the login page — stacking a dialog over a form someone has to correct hides
+  the thing they came to fix.
 - **Test mode:** `npm run dev:test` = `vite --mode test --port 5174 --strictPort`, which
   loads the committed `.env.test` (secret-free — just `VITE_API_URL=http://localhost:3001`).
   Mode-specific env files override `.env`, so this is how the Playwright run points the

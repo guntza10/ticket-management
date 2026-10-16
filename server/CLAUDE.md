@@ -69,10 +69,46 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
   (without it every `res.locals.session` is `any`).
 - **Endpoints returning user data always `select` an allow-list of fields.** A bare
   `findMany()` ships every column the table happens to have, including whatever the next
-  migration adds.
+  migration adds. `GET` and `POST /api/users` answer with the same five fields, and
+  `e2e/users-api.spec.ts` asserts the exact key set on both.
+
+## Creating accounts
+
+- **`src/users/create-user.ts` owns the rows, and `prisma/seed.ts` calls it too.**
+  An account is a `user` row *plus* a credential `account` row, and the two have to
+  agree on
+  `providerId: "credential"`, on `accountId` being the user's own id, and on the hasher.
+  Get any of those wrong and the account is created successfully and can simply never
+  sign in — a failure with no error attached. One function means the seed and the
+  endpoint cannot drift into that quietly.
+- **Hash through `await auth.$context` → `ctx.password.hash`**, not the exported
+  `hashPassword` from `better-auth/crypto`. They are the same function today, but
+  sign-in verifies with whatever `emailAndPassword.password.hash` resolves to, so the
+  config-aware one is the only one that stays correct if that is ever customised.
+- **The email is lowercased by the schema, and that is correctness.** `/sign-in/email`
+  looks a user up by `email.toLowerCase()`, and `@@unique([email])` compares bytes — so
+  an address stored with a capital belongs to an account nobody can sign in to, sitting
+  beside the lowercase one instead of being rejected as a duplicate.
+- **Both rows go in one `$transaction`.** A user row whose account row never landed
+  occupies the address, cannot sign in, and cannot be created again, because the retry
+  answers 409 forever.
+- **`role` is never read from the request body.** It is a literal in the handler. zod
+  strips keys it doesn't know, so a body asking for `role: "admin"` is ignored rather
+  than refused — `e2e/users-api.spec.ts` pins that the answer comes back as `agent`.
+- **Duplicate address: catch Prisma `P2002`, don't pre-check.** A `findUnique` first is
+  not race-proof, so it buys a round-trip and no correctness — and it makes the catch
+  look unreachable, which is how the catch ends up untested and then wrong.
+- **The validation schema is duplicated in `client/src/components/CreateUserForm.tsx`.**
+  A shared workspace cannot hold it: the server runs Node-native TypeScript with no
+  build step, and Node refuses to strip types under `node_modules`, which is exactly
+  where npm symlinks a workspace package. The guard is the API spec *"POST /api/users is
+  400 when the password is shorter than 8 characters"* — relax one copy and it goes red.
 
 ## Error handling
 
+- **Every error answers `{ error: "<snake_case_code>" }`.** In use: `unauthenticated`
+  (401), `forbidden` (403), `invalid_body` (400), `email_taken` (409), `internal_error`
+  (500). A client reads the code; the prose for a person is the client's job.
 - **One error-handling middleware, last in `index.ts`** — four parameters
   (`err, req, res, next`); three and Express silently treats it as ordinary
   middleware that never runs.
@@ -114,6 +150,11 @@ production; `.env.test` sets `NODE_ENV=test` so E2E runs don't hit 429s.
 
 ## Gotchas
 
+- **oxlint's `no-async-endpoint-handlers` is off** (`.oxlintrc.json`). It was written for
+  Express 4, which dropped a rejected promise on the floor; Express 5 forwards it to the
+  error handler, which is what this codebase relies on. It was never protecting anything
+  here either — it skips a handler whose request parameter is named `_req`, which is the
+  only reason the pre-existing async `GET /api/users` passed it.
 - **Don't re-run `better-auth generate`** — it rewrites the `role` field back to String.
 - After a schema change, if the client errors "Unknown argument X", run
   `npm run db:generate --workspace server` (migrate doesn't always regenerate the client).
@@ -121,7 +162,8 @@ production; `.env.test` sets `NODE_ENV=test` so E2E runs don't hit 429s.
 ## Structure
 
 - `src/index.ts` — Express app wiring: middleware, mounts, error handler, `listen`
-- `src/users/users.routes.ts` — the `/api/users` router
+- `src/users/` — the `/api/users` module: `users.routes.ts` (the router) and
+  `create-user.ts` (the schema + the row-writing function shared with `prisma/seed.ts`)
 - `src/auth.ts` — better-auth config · `src/require-auth.ts` — session guard
   · `src/require-admin.ts` — role guard
 - `src/db.ts` — Prisma client · `prisma/` — schema, migrations, `seed.ts`

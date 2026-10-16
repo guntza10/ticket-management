@@ -29,9 +29,10 @@ Legend: 🔴 must-have · 🟡 important · 🟢 later
 
 ## Phase 3 — User Management 🔴
 
-- [ ] Create user management page (admin only) — *read-only list shipped; the
-      create/edit/delete controls are still missing*
-- [ ] Implement create agent API endpoint
+- [ ] Create user management page (admin only) — *list + create shipped; edit and
+      delete controls are still missing*
+- [x] Implement create agent API endpoint — `POST /api/users`, admin-only, role forced
+      to `agent` server-side
 - [x] Implement list users API endpoint
 - [ ] Implement edit user API endpoint
 - [ ] Implement delete user API endpoint

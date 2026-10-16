@@ -10,6 +10,14 @@
   "rules": {
     "typescript/no-explicit-any": "error",
     "import/no-unassigned-import": "off",
+    // Written for Express 4, which dropped a rejected promise on the floor.
+    // Express 5 forwards it to the error-handling middleware, which is the
+    // behaviour this codebase relies on (see CLAUDE.md "Error handling") — so
+    // the rule would force a .catch(next) wrapper around every async route to
+    // no purpose. It was never protecting the routes here anyway: it skips a
+    // handler whose request parameter is named `_req`, which is how the
+    // pre-existing async GET /api/users passed it.
+    "no-async-endpoint-handlers": "off",
 
     "no-nested-ternary": "error",
     "no-else-return": "error",

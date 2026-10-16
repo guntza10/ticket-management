@@ -1,12 +1,18 @@
 import type { Role } from "../src/generated/prisma/client.ts";
 import prisma from "../src/db.ts";
-import { auth } from "../src/auth.ts";
+import {
+  createUserSchema,
+  createUserWithPassword,
+} from "../src/users/create-user.ts";
 
 // Seed accounts from env-provided credentials. Idempotent: an account that
 // already exists is left alone, so this is safe to re-run.
-// Works even with public sign-up disabled — it writes the user + credential
-// account directly, using Better Auth's own password hasher so /sign-in/email
-// verifies correctly.
+//
+// The rows themselves are written by createUserWithPassword — the same function
+// POST /api/users calls. Sharing it is not tidiness: the two writes have to
+// agree on providerId, on accountId matching the user's id, and on the hasher,
+// and any disagreement produces an account that is created successfully and can
+// never sign in. Two copies of that would drift in silence.
 
 async function seedUser(user: {
   name: string;
@@ -14,38 +20,22 @@ async function seedUser(user: {
   password: string;
   role: Role;
 }) {
-  const existing = await prisma.user.findUnique({
-    where: { email: user.email },
-  });
+  // Parse before the existence check, not after. The schema lowercases the
+  // address, so an env file with a capital letter would otherwise look past the
+  // row it seeded last time and then crash on the unique constraint. It also
+  // means a too-short ADMIN_PASSWORD is refused here instead of creating an
+  // account that breaks the app's own rule.
+  const { name, email, password } = createUserSchema.parse(user);
+
+  const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
-    console.log(`Already exists (${user.email}) — skipping.`);
+    console.log(`Already exists (${email}) — skipping.`);
     return;
   }
 
-  const ctx = await auth.$context;
-  const hashedPassword = await ctx.password.hash(user.password);
+  await createUserWithPassword({ name, email, password, role: user.role });
 
-  const userId = crypto.randomUUID();
-  await prisma.user.create({
-    data: {
-      id: userId,
-      name: user.name,
-      email: user.email,
-      emailVerified: true,
-      role: user.role,
-    },
-  });
-  await prisma.account.create({
-    data: {
-      id: crypto.randomUUID(),
-      userId,
-      accountId: userId,
-      providerId: "credential",
-      password: hashedPassword,
-    },
-  });
-
-  console.log(`Seeded user: ${user.email} (role=${user.role})`);
+  console.log(`Seeded user: ${email} (role=${user.role})`);
 }
 
 const adminEmail = process.env.ADMIN_EMAIL;
