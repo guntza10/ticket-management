@@ -11,6 +11,8 @@
 - **ลำดับมีผลจริง ไม่ใช่เรื่องความสวยงาม** — โปรเจกต์นี้มี 2 เคสที่พังถ้าสลับ (ดูหัวข้อ "ลำดับ")
 - **`return res.status(...)` ต้องมี `return`** — response ถูกส่งไปแล้วตั้งแต่เรียก `res.json()` สิ่งที่ `return` ทำคือ**หยุดโค้ดไม่ให้ไหลต่อ**
 - **Express 5 ไม่ต้อง `try/catch` ทุก route** — promise reject ถูกส่งต่อให้ error handler อัตโนมัติ · แต่ยังต้องเขียน error handler เอง **1 ตัว ท้ายไฟล์ 4 พารามิเตอร์เป๊ะๆ** ไม่งั้น default ของ Express จะส่ง stack ให้ client
+- **`Router` = app ย่อยที่ยังไม่รู้ว่าตัวเองถูกแขวนที่ไหน** แขวนด้วย `app.use(prefix, router)` → path ข้างในเขียนแบบไม่มี prefix · โปรเจกต์นี้ใช้จริงแล้วที่ `/api/users` (ดูหัวข้อ 4)
+- **แขวน Router ต้องใช้ `use` เท่านั้น ใช้ `all` ไม่ได้** — router เทียบ path กับ `req.url` ที่ถูกตัด prefix แล้ว · `all` ไม่ตัด → router หา route ไม่เจอ → **404** (มีผลทดลองในหัวข้อ 4)
 - **เลือกยังไง:** แวะทำอะไรแล้วปล่อยผ่าน → `use` · ตอบที่ path เจาะจง → `get/post/put/delete` · ตอบแต่ไม่รู้ method → `all` (เจอน้อยมาก)
 
 ---
@@ -65,6 +67,34 @@ app.all("/shop/*splat", fn)       // B
 **`/shopping` ไม่เข้าทั้งคู่** → `use` ไม่ได้จับแบบ "ขึ้นต้นด้วยตัวอักษรพวกนี้" มันต้อง**ขาดที่ `/`** พอดี
 ไม่งั้น `/api` จะไปจับ `/apifoo` ด้วย
 
+### `all` บังคับต้องมี path · `use` ไม่บังคับ
+
+นี่คือเหตุผลตรง ๆ ว่าทำไม `cors` กับ `express.json()` ใน `index.ts` **เขียนด้วย `all` ไม่ได้เลย**
+ตั้งแต่ระดับ syntax:
+
+```js
+app.use(fn)   // ✅ ไม่ error — path เป็น optional · ไม่ใส่ = "/" = ทุก request
+app.all(fn)   // ❌ PathError: Unexpected ( at index 0
+              //    Express เอา function ตัวแรกไปตีความเป็น path แล้วพัง
+```
+
+**แล้วถ้าใส่ wildcard แทนล่ะ** — `app.all("/*splat", fn)` ยังไม่เท่ากันอยู่ดี:
+
+| ยิงอะไร | `app.use(fn)` | `app.all("/*splat", fn)` |
+|---|---|---|
+| `/` | ✅ | ❌ **หลุด** |
+| `/foo` | ✅ | ✅ |
+| `/foo/bar` | ✅ | ✅ |
+| `/api/users` | ✅ | ✅ |
+
+`/*splat` บังคับว่าต้องมี `/` **แล้วตามด้วยอะไรสักอย่าง** — `/` เปล่า ๆ จึงไม่เข้า
+(เหตุผลเดียวกับที่ `all("/shop/*splat")` ไม่จับ `GET /shop` ในตารางข้างบน)
+
+โปรเจกต์นี้มี route ที่ `/` อยู่จริง เพราะงั้นถ้าเปลี่ยน `cors` ไปใช้ `all("/*splat")`
+→ request ที่ `/` จะไม่ได้ CORS header
+
+> **สรุป:** งานที่ต้องครอบ *ทุก path ไม่มียกเว้น* มีแต่ `app.use(fn)` ที่ทำได้
+
 ### สิ่งที่ handler มองเห็นก็ต่างกัน
 
 ยิง `GET /shop/items/42`:
@@ -92,6 +122,15 @@ all → req.url = "/shop/items/42"   req.baseUrl = ""        req.params = { spla
 | ตอบ `res.json(...)` = จบ ไม่เดินต่อ | handler |
 
 `requireAuth` / `requireAdmin` ทำได้ทั้งสองอย่าง แล้วแต่ผลการตรวจ — ผ่านก็ `next()`, ไม่ผ่านก็ตอบ 401/403 จบเลย
+
+> ⚠️ **วิธี register ไม่ได้เป็นตัวกำหนดพฤติกรรม** — เข้าใจผิดที่พบบ่อยคือคิดว่า
+> *"`use` = ส่งต่อ · `all` = ตอบ"* **ไม่จริง** · ทั้งคู่แค่เอา function ไปต่อท้ายรายการ
+> ต่างกันที่เงื่อนไข path เท่านั้น (หัวข้อ 2) · คนตัดสินว่าจะส่งต่อหรือตอบคือ **ข้างใน function**
+> ว่าเขียน `next()` หรือ `res.json()`
+>
+> หลักฐาน: `app.use("/api/auth", toNodeHandler(auth))` คือ `use` ที่ **ตอบ** response
+> (ทดลองแล้ว sign-in ผ่าน 200) · ที่คนเขียน `use` แล้วมักส่งต่อ เป็นเพราะ**ธรรมชาติของงาน**
+> ที่ต้องคลุมหลาย path มักเป็นงาน "แวะทำแล้วปล่อยผ่าน" ไม่ใช่เพราะ `use` บังคับ
 
 ### ฟังก์ชันที่ผลิต middleware (ทำไมมีวงเล็บ)
 
@@ -128,8 +167,108 @@ app.use("/api/users", requireAuth, requireAdmin);
 | ผูกกับ route (`get`) | เห็นด่านติดกับ route ในบรรทัดเดียว อ่านง่าย | เขียนซ้ำทุก endpoint · ลืมได้ |
 | ผูกกับโซน (`use`) | ประกาศครั้งเดียว · endpoint ใหม่ถูกคุ้มอัตโนมัติ | ต้องเลื่อนตาไปดูข้างบนถึงรู้ว่ามีด่าน · วันที่อยากยกเว้น route เดียวจะแงะยาก |
 
-> ท่ามาตรฐานอีกแบบคือ `express.Router()` — แยกไฟล์ route ออกไปแล้วแขวนด้วย
-> `app.use("/api/users", usersRouter)` เก็บไว้ใช้ตอนไฟล์ route เริ่มยาว
+**โปรเจกต์นี้เลือกแบบโซน** — `/api/users` ทุก route เป็น admin-only เหมือนกันหมด และความผิดพลาด
+ที่หลุดจริงคือ "เพิ่ม route ใหม่แล้วลืมใส่ด่าน" ไม่ใช่ "route ที่อยากยกเว้น" · เขียนเป็น
+`router.use(requireAuth, requireAdmin)` ครั้งเดียวในไฟล์ router (ดูหัวข้อถัดไป)
+
+### แยกออกเป็นไฟล์ด้วย `express.Router()`
+
+พอ `index.ts` เริ่มยาว ท่าถัดไปคือยกทั้งกลุ่มออกไปเป็นไฟล์ของตัวเอง **โปรเจกต์นี้ทำแล้วที่ `/api/users`**
+
+`Router()` คือ **app ย่อย** — รับ `get` / `post` / `use` ได้เหมือน `app` ทุกอย่าง ต่างกันแค่มัน
+**ยังไม่รู้ว่าตัวเองจะถูกแขวนไว้ที่ URL ไหน**
+
+```ts
+// users/users.routes.ts
+const router = Router();
+router.use(requireAuth, requireAdmin);   // ด่านคุ้มทั้ง module
+router.get("/", handler);                 // ยังไม่รู้ว่า "/" คือที่ไหน
+router.post("/", handler);
+export default router;
+
+// index.ts
+app.use("/api/users", usersRouter);       // ← ตรงนี้คือที่ที่มันถูกแขวน
+```
+
+**URL จริง = prefix ตอนแขวน + path ข้างใน**
+
+```
+app.use("/api/users", …)  +  router.get("/")        →  GET    /api/users
+app.use("/api/users", …)  +  router.post("/")       →  POST   /api/users
+app.use("/api/users", …)  +  router.delete("/:id")  →  DELETE /api/users/:id
+```
+
+### ทำไมต้อง `use` — `all` ใช้แขวน Router ไม่ได้
+
+**router เทียบ path ของตัวเองกับ `req.url` ณ ตอนนั้น ไม่ใช่ URL ที่คนยิงเข้ามา** — นี่คือ
+หัวใจทั้งหมด และเป็นเหตุผลที่การ "ตัด prefix" มีผลจริง ไม่ใช่รายละเอียดสวยงาม
+
+```
+แขวนด้วย use:   คนยิง /a/users → use ตัด "/a/users" ออก → req.url = "/"
+                 router ถาม "มีใครจด path '/' ไว้ไหม"  →  router.get("/")  ตรง ✅
+
+แขวนด้วย all:   คนยิง /b/users → all ไม่ตัด            → req.url = "/b/users"
+                 router ถาม "มีใครจด path '/b/users' ไว้ไหม"
+                 router.get("/")      ไม่ใช่
+                 router.get("/deep")  ไม่ใช่            →  ไม่มีใครเลย ❌ 404
+```
+
+ของที่ถูกตัดไม่ได้หายไป — ไปอยู่ที่ **`req.baseUrl`** ส่วน **`req.originalUrl`** เก็บ URL เต็มไว้เสมอ
+(เหตุผลที่ error handler log ด้วย `req.originalUrl` ไม่ใช่ `req.url`)
+
+**ผลการทดลองจริง** — router ตัวเดียวกันเป๊ะ (`router.get("/")` + `router.get("/deep")`)
+แขวนสองแบบพร้อมกันแล้วยิงเข้าไป:
+
+| ยิงอะไร | router เห็น `req.url` | `req.baseUrl` | ผล |
+|---|---|---|---|
+| `/a/users` — `app.use` | `"/"` | `"/a/users"` | **200** ✅ |
+| `/b/users` — `app.all` | `"/b/users"` | `""` | **404** ❌ |
+| `/a/users/deep` — `app.use` | `"/deep"` | `"/a/users"` | **200** ✅ |
+| `/b/users/deep` — `app.all` | *(ไม่เคยเข้าถึง router)* | — | **404** ❌ |
+
+แถวสุดท้ายแสดงความต่าง **อีกเรื่องหนึ่ง** ไปพร้อมกัน: `all("/b/users")` ถามว่า "คุณคือ
+`/b/users` พอดีไหม" แต่ `/b/users/deep` มี `deep` เกินมา → **ไม่เข้าตั้งแต่ต้นทาง**
+middleware ที่ต่อไว้ข้างในไม่เคยถูกเรียกเลยสักตัว
+
+### ประโยชน์ของการตัด — router ไม่ต้องรู้ว่าตัวเองอยู่ที่ไหน
+
+```ts
+// เขียนครั้งเดียว
+router.get("/");
+router.get("/:id");
+```
+```ts
+app.use("/api/users",    usersRouter);   // → /api/users    , /api/users/42
+app.use("/api/v2/users", usersRouter);   // → /api/v2/users , /api/v2/users/42
+app.use("/staff",        usersRouter);   // → /staff        , /staff/42
+```
+
+ไฟล์ router ไม่ต้องแก้สักตัวอักษร เพราะมันไม่เคยรู้จัก prefix ตั้งแต่แรก · ถ้า Express ไม่ตัดให้
+ทุก route ต้องเขียน path เต็ม (`router.get("/api/users/:id")`) แล้ววันเปลี่ยน prefix ต้องไล่แก้ทุกบรรทัด
+
+> **ตัดแล้วเหลืออะไร = "ส่วนที่เกินจาก prefix"** ไม่ใช่ `"/"` เสมอไป —
+> `/api/users` → `"/"` · `/api/users/42` → `"/42"` (ตรงกับ `router.get("/:id")`)
+
+
+**`router.use(...)` = ด่านของทั้ง module** ตรรกะเดียวกับ `app.use(path, guard)` ในตารางข้างบน
+แค่ขอบเขตคือ "ทุก route ในไฟล์นี้" แทนที่จะเป็น "ทุก route ที่ประกาศหลังบรรทัดนี้"
+
+> 🪤 **กับดัก: router ไม่ได้แปลง body เอง** — `router.post` อ่าน `req.body` ได้ก็ต่อเมื่อ
+> `express.json()` ทำงานไปแล้ว ซึ่งอยู่ใน `index.ts` **เหนือ**จุดแขวน
+> ย้ายจุดแขวนขึ้นไปอยู่เหนือ `express.json()` เมื่อไหร่ → `req.body` เป็น `undefined` →
+> **ทุก POST ตอบ 400** ส่วน GET รอดหมดเพราะไม่เคยแตะ body (ทดลองแล้ว: POST แดง 4 ตัว GET เขียว)
+
+**ซ้อนกันได้ไม่จำกัดชั้น** เพราะ `router.use` ทำงานเหมือน `app.use`:
+
+```ts
+app.use("/api/tickets", ticketsRouter);        // → /api/tickets
+router.use("/:id/comments", commentsRouter);   // → /api/tickets/:id/comments
+```
+
+แต่ละชั้นตัด prefix ของตัวเองออก ชั้นในเห็น path สั้นลงเรื่อยๆ
+
+> กติกาการจัดโฟลเดอร์ของโปรเจกต์นี้ (module = โฟลเดอร์ ไม่ใช่ layer) อยู่ใน
+> [`server/CLAUDE.md`](../../server/CLAUDE.md) หัวข้อ **Module layout**
 
 ---
 
@@ -148,7 +287,7 @@ app.use(express.json());                             // ต้องมาหล
 ### เคส 2 — `requireAuth` ต้องมาก่อน `requireAdmin`
 
 ```ts
-app.get("/api/users", requireAuth, requireAdmin, handler);
+router.use(requireAuth, requireAdmin);   // users/users.routes.ts
 ```
 
 `requireAuth` เป็นคน**วาง** session ลง `res.locals` · `requireAdmin` แค่**อ่าน**
@@ -322,14 +461,25 @@ try {
 
 ---
 
-## โค้ดจริงในโปรเจกต์นี้ (`server/src/index.ts`)
+## โค้ดจริงในโปรเจกต์นี้
 
 ```ts
+// index.ts — เหลือแต่ wiring ไม่ถือ route ของ resource แล้ว
 app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));   // ทุก request
 app.all("/api/auth/*splat", toNodeHandler(auth));              // ยกทั้งโซนให้ better-auth
 app.use(express.json());                                       // ทุก request (ต้องอยู่ใต้บรรทัดบน)
-app.get("/api/me",    requireAuth, handler);                   // GET เท่านั้น
-app.get("/api/users", requireAuth, requireAdmin, handler);     // GET + ต้องเป็น admin
+app.get("/api/me", requireAuth, handler);                      // GET เท่านั้น
+app.use("/api/users", usersRouter);                            // แขวน module
+app.use(errorHandler);                                         // ท้ายสุดเสมอ · 4 พารามิเตอร์
+```
+
+```ts
+// users/users.routes.ts — ของทั้ง /api/users อยู่ที่นี่
+const router = Router();
+router.use(requireAuth, requireAdmin);   // ด่านคุ้มทุก route ในไฟล์นี้
+router.get("/", handler);                 // → GET  /api/users
+router.post("/", handler);                // → POST /api/users
+export default router;
 ```
 
 **ทำไม `cors` ต้องเป็น `use` ไม่ใช่ `get`:** เบราว์เซอร์ยิง **preflight** ด้วย method `OPTIONS`

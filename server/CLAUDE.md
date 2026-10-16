@@ -40,6 +40,24 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
 - Seed an admin with `npm run db:seed --workspace server` (reads `ADMIN_EMAIL` /
   `ADMIN_PASSWORD` from `.env`).
 
+## Module layout
+
+- **An API resource is a folder, not a layer.** Everything about `/api/users` — its
+  router and the logic behind it — lives in `src/users/`. The alternative (a `routes/`
+  folder beside a `services/` folder) scatters one feature across several directories,
+  which is felt the moment a change touches more than the route. Tickets and categories
+  follow the same shape.
+- **`index.ts` holds wiring, not routes:** middleware order, mounts, the error handler,
+  `listen`. The only handlers left in it are `/api/me`, `/` and `/health` — `/api/me`
+  moves the day auth gets a module of its own.
+- **The path prefix lives at the mount**, so `app.use("/api/users", usersRouter)` pairs
+  with `router.get("/")`. A rename then touches one line instead of every route.
+- **Guards go on the router when the whole resource shares them.** `users.routes.ts`
+  calls `router.use(requireAuth, requireAdmin)` once rather than repeating the pair on
+  each route: every route under `/api/users` is admin-only, and the mistake that ships
+  is a new route added without the guards, not one that needed to opt out. Put them on
+  the individual route only when they genuinely differ between routes.
+
 ## Authorization
 
 - Two separate guards, mounted in that order: `requireAuth` (is there a session? no → **401**)
@@ -102,7 +120,8 @@ production; `.env.test` sets `NODE_ENV=test` so E2E runs don't hit 429s.
 
 ## Structure
 
-- `src/index.ts` — Express app + routes
+- `src/index.ts` — Express app wiring: middleware, mounts, error handler, `listen`
+- `src/users/users.routes.ts` — the `/api/users` router
 - `src/auth.ts` — better-auth config · `src/require-auth.ts` — session guard
   · `src/require-admin.ts` — role guard
 - `src/db.ts` — Prisma client · `prisma/` — schema, migrations, `seed.ts`

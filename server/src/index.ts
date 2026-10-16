@@ -2,10 +2,9 @@ import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import { toNodeHandler } from "better-auth/node";
-import prisma from "./db.ts";
 import { auth } from "./auth.ts";
 import { requireAuth } from "./require-auth.ts";
-import { requireAdmin } from "./require-admin.ts";
+import usersRouter from "./users/users.routes.ts";
 import { CLIENT_ORIGIN, PORT } from "./config.ts";
 
 const app = express();
@@ -44,29 +43,10 @@ app.get("/api/me", requireAuth, (_req, res) => {
   });
 });
 
-// Admin-only user list. The two guards are mounted in order and read top to
-// bottom as the sentence they enforce: authenticate, then authorize.
-//
-// `select` is an allow-list, not a convenience: the user table also holds
-// emailVerified, image and whatever a later migration adds, and a bare
-// findMany() would ship every one of those to the browser the day it appears.
-// No try/catch: Express 5 forwards a rejected promise to the error handler
-// below on its own. Catch here only when an error should change the response
-// (e.g. a Prisma unique-constraint violation becoming a 409) — and re-throw
-// anything unrecognised.
-app.get("/api/users", requireAuth, requireAdmin, async (_req, res) => {
-  const users = await prisma.user.findMany({
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      createdAt: true,
-    },
-    orderBy: { createdAt: "asc" },
-  });
-  res.json({ users });
-});
+// Everything under /api/users lives in its own module, guards included. This
+// file keeps the app's wiring — middleware order, mounts, the error handler —
+// so a route's details never compete with it for attention.
+app.use("/api/users", usersRouter);
 
 app.get("/", (_req, res) => {
   res.send("Ticket Management API");
