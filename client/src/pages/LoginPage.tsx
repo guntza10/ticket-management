@@ -7,8 +7,13 @@ import { signIn, useSession } from "@/lib/auth-client";
 import ErrorDialog from "@/components/ErrorDialog";
 import PasswordInput from "@/components/PasswordInput";
 import { Button } from "@/components/ui/button";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
@@ -72,45 +77,39 @@ export default function LoginPage() {
           <CardDescription>Ticket Management</CardDescription>
         </CardHeader>
         <CardContent>
-          <form
-            onSubmit={handleSubmit(onSubmit)}
-            noValidate
-            className="space-y-5"
-          >
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                aria-invalid={!!errors.email}
-                {...register("email")}
-              />
-              {errors.email && (
-                <p className="text-destructive text-sm">
-                  {errors.email.message}
-                </p>
-              )}
-            </div>
+          {/* Field / FieldLabel / FieldError are shadcn's own form primitives,
+              so the label-and-error shape is not hand-rolled per field. They
+              are markup only — `register` keeps the inputs uncontrolled, so the
+              id still pairs with htmlFor by hand. */}
+          <form onSubmit={handleSubmit(onSubmit)} noValidate>
+            <FieldGroup>
+              <Field data-invalid={!!errors.email}>
+                <FieldLabel htmlFor="email">Email</FieldLabel>
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  aria-invalid={!!errors.email}
+                  {...register("email")}
+                />
+                <FieldError errors={[errors.email]} />
+              </Field>
 
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <PasswordInput
-                id="password"
-                autoComplete="current-password"
-                aria-invalid={!!errors.password}
-                {...register("password")}
-              />
-              {errors.password && (
-                <p className="text-destructive text-sm">
-                  {errors.password.message}
-                </p>
-              )}
-            </div>
+              <Field data-invalid={!!errors.password}>
+                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <PasswordInput
+                  id="password"
+                  autoComplete="current-password"
+                  aria-invalid={!!errors.password}
+                  {...register("password")}
+                />
+                <FieldError errors={[errors.password]} />
+              </Field>
 
-            <Button type="submit" disabled={isSubmitting} className="w-full">
-              {isSubmitting ? "Signing in…" : "Sign in"}
-            </Button>
+              <Button type="submit" disabled={isSubmitting} className="w-full">
+                {isSubmitting ? "Signing in…" : "Sign in"}
+              </Button>
+            </FieldGroup>
           </form>
         </CardContent>
       </Card>

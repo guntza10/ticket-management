@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -8,8 +7,13 @@ import { api } from "@/lib/api";
 import PasswordInput from "@/components/PasswordInput";
 import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 // Deliberately duplicated in server/src/users/create-user.ts — see the comment
 // there for why a shared workspace cannot hold it. The guard against the two drifting
@@ -27,30 +31,27 @@ const createUserSchema = z.object({
 
 type CreateUserValues = z.infer<typeof createUserSchema>;
 
-// The three fields differ only in their control, so the surrounding shape lives
-// here once. `id` is passed to both this wrapper and the control on purpose:
-// without shadcn's form.tsx there is no context to carry it, and an explicit
-// pair is better than a label pointing at nothing. LoginPage still writes this
-// shape out inline — promoting it to a shared component is a fair follow-up,
-// not this change's job.
-function Field({
-  id,
-  label,
-  error,
-  children,
-}: {
-  id: string;
-  label: string;
-  error?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      {children}
-      {error && <p className="text-destructive text-sm">{error}</p>}
-    </div>
-  );
+// The write and the cache it has to refresh, named as one thing: at the call
+// site this reads as `useCreateUser()` instead of a queryClient, a useMutation
+// and a cache key threaded through the markup. The repo's first useMutation.
+// The response body is ignored on purpose: the table reads from the ["users"]
+// query, so there is nothing to write into the cache by hand and no reason to
+// couple this form to the row type.
+//
+// It stays in this file while it is the only one. The day edit and delete
+// arrive they will each need the same ["users"] key from their own component,
+// and a hook pinned to the bottom of this one cannot be shared — that is the
+// point to lift all three into a module of their own, not before.
+function useCreateUser() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (user: CreateUserValues) => api.post("/api/users", user),
+    // Returned, not fired and forgotten. mutateAsync then settles only once the
+    // roster has actually refetched, so the dialog closes onto a table that
+    // already holds the new row instead of racing it.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
+  });
 }
 
 export default function CreateUserForm({
@@ -58,7 +59,7 @@ export default function CreateUserForm({
 }: {
   onCreated: () => void;
 }) {
-  const queryClient = useQueryClient();
+  const { mutateAsync } = useCreateUser();
 
   const {
     register,
@@ -66,17 +67,6 @@ export default function CreateUserForm({
     setError,
     formState: { errors, isSubmitting },
   } = useForm<CreateUserValues>({ resolver: zodResolver(createUserSchema) });
-
-  // The repo's first useMutation. The response body is ignored on purpose: the
-  // table reads from the ["users"] query, so there is nothing to write into the
-  // cache by hand and no reason to couple this form to the row type.
-  const { mutateAsync } = useMutation({
-    mutationFn: (user: CreateUserValues) => api.post("/api/users", user),
-    // Returned, not fired and forgotten. mutateAsync then settles only once the
-    // roster has actually refetched, so the dialog closes onto a table that
-    // already holds the new row instead of racing it.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
-  });
 
   async function onSubmit(values: CreateUserValues) {
     try {
@@ -101,51 +91,61 @@ export default function CreateUserForm({
     }
   }
 
+  // Field / FieldLabel / FieldError are shadcn's own form primitives, so the
+  // label-and-error shape is not hand-rolled here. They are markup only — the
+  // id still pairs with htmlFor by hand, because `register` keeps the inputs
+  // uncontrolled and there is no Controller context to carry one.
   return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
-      <Field id="create-user-name" label="Name" error={errors.name?.message}>
-        <Input
-          id="create-user-name"
-          autoComplete="off"
-          aria-invalid={!!errors.name}
-          {...register("name")}
-        />
-      </Field>
+    <form onSubmit={handleSubmit(onSubmit)} noValidate>
+      <FieldGroup>
+        <Field data-invalid={!!errors.name}>
+          <FieldLabel htmlFor="create-user-name">Name</FieldLabel>
+          <Input
+            id="create-user-name"
+            autoComplete="off"
+            aria-invalid={!!errors.name}
+            {...register("name")}
+          />
+          <FieldError errors={[errors.name]} />
+        </Field>
 
-      <Field id="create-user-email" label="Email" error={errors.email?.message}>
-        <Input
-          id="create-user-email"
-          type="email"
-          // off, not "email": the browser would otherwise offer the signed-in
-          // admin's own address for an account that is not theirs.
-          autoComplete="off"
-          aria-invalid={!!errors.email}
-          {...register("email")}
-        />
-      </Field>
+        <Field data-invalid={!!errors.email}>
+          <FieldLabel htmlFor="create-user-email">Email</FieldLabel>
+          <Input
+            id="create-user-email"
+            type="email"
+            // off, not "email": the browser would otherwise offer the signed-in
+            // admin's own address for an account that is not theirs.
+            autoComplete="off"
+            aria-invalid={!!errors.email}
+            {...register("email")}
+          />
+          <FieldError errors={[errors.email]} />
+        </Field>
 
-      <Field
-        id="create-user-password"
-        label="Password"
-        error={errors.password?.message}
-      >
-        <PasswordInput
-          id="create-user-password"
-          autoComplete="new-password"
-          aria-invalid={!!errors.password}
-          {...register("password")}
-        />
-      </Field>
+        <Field data-invalid={!!errors.password}>
+          <FieldLabel htmlFor="create-user-password">Password</FieldLabel>
+          <PasswordInput
+            id="create-user-password"
+            autoComplete="new-password"
+            aria-invalid={!!errors.password}
+            {...register("password")}
+          />
+          <FieldError errors={[errors.password]} />
+        </Field>
 
-      {errors.root && (
-        <p className="text-destructive text-sm">{errors.root.message}</p>
-      )}
+        {/* Form-level, so it sits outside every Field — and it takes children
+            rather than `errors`, because this is not one field's validation
+            message. FieldError renders nothing when handed nothing, which is
+            why there is no condition around it. */}
+        <FieldError>{errors.root?.message}</FieldError>
 
-      <DialogFooter>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Creating…" : "Create"}
-        </Button>
-      </DialogFooter>
+        <DialogFooter>
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Creating…" : "Create"}
+          </Button>
+        </DialogFooter>
+      </FieldGroup>
     </form>
   );
 }

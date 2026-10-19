@@ -44,6 +44,12 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     **layout/sizing** classes (`w-full`, `max-w-sm`, positioning). Use `variant`/`size`
     for looks — not custom color/border/padding overrides.
   - Signal field errors with `aria-invalid` (built-in destructive styling), not custom CSS.
+  - **Forms are built from `field`, not `form`.** shadcn replaced the old
+    `Form`/`FormField`/`FormItem`/`FormMessage` wrapper with **`Field`** in October 2025.
+    In this project's `radix-nova` style `/r/styles/radix-nova/form.json` carries no
+    files at all, so `shadcn add form` installs nothing and reports success. `field.tsx`
+    is the component to reach for; adding it also pulled in `separator.tsx`, which
+    `FieldSeparator` imports and nothing in this app uses yet.
   - **`cn` comes from the `cn` package**, not a local `@/lib/utils` — shadcn 4.x
     generates components that way, so there is no local utils file to keep in sync.
     It is a compiled drop-in for `clsx` + `tailwind-merge`, which were removed with it.
@@ -65,6 +71,16 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   deliberately a copy of `server/src/users/create-user.ts`'s; the API spec
   *"POST /api/users is 400 when the password is shorter than 8 characters"* is what
   catches them drifting.
+- **One field = `Field` + `FieldLabel` + `FieldError`, inside a `FieldGroup`.** shadcn's
+  primitives own that shape, so no page hand-rolls a `div.space-y-2` with a `<p
+  className="text-destructive">` under it — `CreateUserForm` used to carry a local
+  `Field` wrapper for exactly this and it is gone. `FieldError` renders **nothing** when
+  handed nothing, which is why the form-level `errors.root` message needs no condition
+  around it, and it carries `role="alert"`, so a validation message is announced rather
+  than only shown. They are markup only: `register` keeps the inputs uncontrolled, so
+  each `id` still pairs with `htmlFor` by hand and `aria-invalid` is still set on the
+  control. Pass `data-invalid` to `Field` as well — that is what turns the label
+  destructive with the message.
 - **Dialogs that hold a form: controlled Root, form in its own component.** Radix
   unmounts `DialogContent` on close, so keeping the `useForm` call inside the child means
   every open starts blank with no `reset()` to remember, and yesterday's error cannot
@@ -86,9 +102,12 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   effects twice). `queryKey` is the cache's identity, not a label: name the same key to
   invalidate after a mutation. Background: `_resources/knowledge/axios.md` and
   `tanstack-query.md`.
-- **Writes: `useMutation`, and invalidate the key the list reads.** `CreateUserForm`
-  posts, then `onSuccess` **returns** `queryClient.invalidateQueries({ queryKey:
-  ["users"] })` — returning it makes `mutateAsync` settle only after the roster has
+- **Writes: `useMutation`, and invalidate the key the list reads.** The call lives in a
+  named hook next to the component (`useCreateUser` in `CreateUserForm.tsx`) so the
+  write and the cache it refreshes sit together, away from the markup; edit and delete
+  get siblings of it. It posts, then `onSuccess` **returns**
+  `queryClient.invalidateQueries({ queryKey: ["users"] })` — returning it makes
+  `mutateAsync` settle only after the roster has
   refetched, so the dialog closes onto a table that already holds the new row instead of
   racing it. Name a different key and the table keeps showing the roster from before.
   The `return` is guarded by *"waits for the roster to refetch before reporting success"*
