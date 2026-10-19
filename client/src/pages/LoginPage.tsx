@@ -29,7 +29,7 @@ type LoginForm = z.infer<typeof loginSchema>;
 export default function LoginPage() {
   const navigate = useNavigate();
   const { data: session, isPending } = useSession();
-  const [dialogMessage, setDialogMessage] = useState<string | null>(null);
+  const [signInError, setSignInError] = useState<string | null>(null);
 
   const {
     register,
@@ -52,10 +52,12 @@ export default function LoginPage() {
       password: data.password,
     });
 
-    // Auth / server errors surface in the dialog (not inline).
+    // Auth / server errors surface in the dialog (not inline). `||` rather than
+    // `??` for the same reason as NavBar: an empty message would leave the
+    // dialog shut and the page silent.
     if (error) {
-      setDialogMessage(
-        error.message ?? "Sign in failed. Please check your credentials.",
+      setSignInError(
+        error.message || "Sign in failed. Please check your credentials.",
       );
     } else {
       navigate("/");
@@ -114,8 +116,9 @@ export default function LoginPage() {
       </Card>
 
       <ErrorDialog
-        message={dialogMessage}
-        onClose={() => setDialogMessage(null)}
+        title="Sign in failed"
+        message={signInError}
+        onClose={() => setSignInError(null)}
       />
     </div>
   );

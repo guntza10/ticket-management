@@ -189,13 +189,15 @@ a suite as passing without having run it; "should pass" is not a result.
   the browser and call the server directly, covering `/api/users` on both verbs: who may
   read and who may create, the field allow-list on each answer, and what a create
   refuses. Every run migrates, truncates and re-seeds itself.
-- ✅ **Component tests** — Vitest + Testing Library, **16 specs**. `UsersPage` covers all
+- ✅ **Component tests** — Vitest + Testing Library, **20 specs**. `UsersPage` covers all
   four render states (loading, rows, empty, error), `ProtectedRoute` all four branches
-  (loading, signed out, wrong role, allowed), and `CreateUserForm` its validation, its
+  (loading, signed out, wrong role, allowed), `CreateUserForm` its validation, its
   payload, both failure messages, the invalidation, and that it waits for the refetch
-  before reporting success. Several of those states are ones E2E cannot stage: the server
-  will not return an empty roster or fail on request, and the loading states are gone
-  before an assertion can land on them.
+  before reporting success, and `NavBar` what happens when the server refuses a sign-out
+  (including a refusal that carries no message to quote).
+  Several of those states are ones E2E cannot stage: the server will not return an empty
+  roster, fail on request, or reject a sign-out on demand, and the loading states are
+  gone before an assertion can land on them.
 - ⏭️ **Next** — the rest of Phase 3 (create / edit / delete a user), then the tickets domain (schema + API + UI).
 
 ## Known gaps — deliberately deferred
@@ -211,4 +213,4 @@ is what will make it start hurting; revisit when you hit it.
 | **No catch-all route.** `App.tsx` has `/login`, `/`, `/users` and nothing else, so an unknown URL renders a blank page. | Anyone mistyping a URL; more so once there are more routes. | Add a `*` route with a 404 page, then a spec for it. |
 | **No "return to intended page" after sign-in.** A signed-out visit to `/users` lands on `/` after login, not `/users`. | Deep links being shared, or any flow that sends users to a specific page. | Have `ProtectedRoute` record the attempted path and `LoginPage` honour it. |
 | **`CardTitle` renders a `div`, not a heading.** Screen readers find no page headings; specs assert body copy instead of `getByRole("heading")`. | Any accessibility pass. | Render page titles as real headings, then switch those assertions over. |
-| **The suite is top-heavy** — 59 specs at the E2E layer (17 of them API-level), 16 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |
+| **The suite is top-heavy** — 59 specs at the E2E layer (17 of them API-level), 20 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |

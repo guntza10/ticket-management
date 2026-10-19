@@ -98,9 +98,21 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - **Server errors from a mutation go through `setError`, not a second dialog.** A 409
   becomes `setError("email", …)`: it lands in the field-error markup that already
   exists, lights `aria-invalid` for free, and react-hook-form clears it on the next
-  submit. Anything else becomes `setError("root", …)` above the footer. `ErrorDialog`
-  stays for the login page — stacking a dialog over a form someone has to correct hides
-  the thing they came to fix.
+  submit. Anything else becomes `setError("root", …)` above the footer. Stacking a
+  dialog over a form someone has to correct hides the thing they came to fix, so
+  `ErrorDialog` is for failures with no field to land on: a rejected sign-in, and a
+  sign-out the server refused. Its `title` is a **required** prop — a default would have
+  labelled NavBar's failed sign-*out* "Sign in failed", which is the one thing the
+  heading exists to tell apart.
+- **Read the `error` better-auth hands back; it never throws.** Every client call
+  resolves with `{ data, error }`, so `await signOut()` on its own discards the only
+  report that it failed. `NavBar` reads it and stays put, because a refused sign-out
+  leaves the cookie alive and `/login` would bounce a still-signed-in visitor back to
+  `/` — a click that looks like it did nothing. Default its `message` with **`||`, not
+  `??`**: the field is `string | undefined`, so `""` is inside the type, and `??` would
+  pass it straight through to a dialog that only opens on a non-empty message — which
+  puts the silent click back. `NavBar.test.tsx` covers both the empty and the missing
+  message for that reason.
 - **Test mode:** `npm run dev:test` = `vite --mode test --port 5174 --strictPort`, which
   loads the committed `.env.test` (secret-free — just `VITE_API_URL=http://localhost:3001`).
   Mode-specific env files override `.env`, so this is how the Playwright run points the
@@ -124,6 +136,8 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     request, so those states have no other way to be proven. `ProtectedRoute`'s
     "Loading…" is the clearest case: in a browser it is gone in under 100ms and any
     assertion races the session request, but a faked `useSession` can hold it still.
+    `NavBar.test.tsx` is the same story for a **refused sign-out**: the server will not
+    reject one on demand, so a faked `signOut` is the only way to reach the branch.
   - **Assert where a redirect lands, not that nothing rendered.** `ProtectedRoute.test.tsx`
     wraps the subject in a small `<Routes>` table so `<Navigate>` arrives somewhere with
     readable text — otherwise a test cannot tell "sent home" from "sent to login".

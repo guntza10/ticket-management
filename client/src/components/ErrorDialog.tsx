@@ -12,10 +12,16 @@ import { Button } from "@/components/ui/button";
 // `message` prop: a non-empty message opens it. Any close path (OK button,
 // Escape, backdrop, or the built-in X) triggers onOpenChange, which calls
 // `onClose` so the parent can clear the message.
+//
+// `title` is required rather than defaulted: each caller reports a different
+// failure, and a default would quietly label a failed sign-*out* as a failed
+// sign-in — the one thing the heading exists to tell apart.
 export default function ErrorDialog({
+  title,
   message,
   onClose,
 }: {
+  title: string;
   message: string | null;
   onClose: () => void;
 }) {
@@ -28,7 +34,7 @@ export default function ErrorDialog({
     >
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Sign in failed</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{message}</DialogDescription>
         </DialogHeader>
         <DialogFooter>

@@ -1,14 +1,33 @@
+import { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router";
 import { signOut, useSession } from "@/lib/auth-client";
+import ErrorDialog from "@/components/ErrorDialog";
 import { Button } from "@/components/ui/button";
 
 // Rendered only inside a protected route, so a session is guaranteed here.
 export default function NavBar() {
   const navigate = useNavigate();
   const { data: session } = useSession();
+  const [signOutError, setSignOutError] = useState<string | null>(null);
 
   async function handleLogout() {
-    await signOut();
+    // better-auth's client never throws — every call answers { data, error } —
+    // so awaiting it without reading `error` discards the only report of a
+    // failure. That matters here more than most places: a sign-out the server
+    // refused leaves the session cookie alive, and navigating to /login anyway
+    // would bounce straight back to "/" (LoginPage redirects a signed-in
+    // visitor), reading as the app ignoring the click.
+    const { error } = await signOut();
+
+    if (error) {
+      // `||`, not `??`: `message` is `string | undefined`, so an empty string is
+      // inside the type — and `??` would let it through, leaving the dialog shut
+      // (it opens on a non-empty message) while the early return still skips the
+      // navigation. That is the silent no-op this whole branch exists to remove.
+      setSignOutError(error.message || "Could not sign you out. Please try again.");
+      return;
+    }
+
     navigate("/login");
   }
 
@@ -45,6 +64,12 @@ export default function NavBar() {
           </Button>
         </div>
       </nav>
+
+      <ErrorDialog
+        title="Sign out failed"
+        message={signOutError}
+        onClose={() => setSignOutError(null)}
+      />
     </header>
   );
 }
