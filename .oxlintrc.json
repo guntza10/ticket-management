@@ -15,7 +15,15 @@
     "no-else-return": "error",
     "max-params": ["error", { "max": 4 }],
     "max-depth": ["error", { "max": 4 }],
-    "max-lines-per-function": ["warn", { "max": 100 }],
+    // skipComments because this repo's house style is dense explanatory
+    // comments, so counting them made the rule measure prose rather than how
+    // much the function does. It fired at 106 lines on a 3-field form and was
+    // very nearly used to justify splitting that form into another component —
+    // reshaping code to satisfy a misconfigured tool. Measure the code.
+    "max-lines-per-function": [
+      "warn",
+      { "max": 100, "skipComments": true, "skipBlankLines": true }
+    ],
     "max-lines": ["warn", { "max": 300 }]
   }
 }
