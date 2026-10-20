@@ -137,7 +137,11 @@ describe("CreateUserForm — after it calls the API", () => {
       await screen.findByText("That email address is already in use."),
     ).toBeVisible();
     // Still on the form, so the address can be corrected where it was typed.
-    expect(screen.getByLabelText("Email")).toBeVisible();
+    const email = screen.getByLabelText("Email");
+    expect(email).toBeVisible();
+    // shouldFocus: the cursor is already in the field that has to change,
+    // instead of staying on the submit button that was just pressed.
+    expect(email).toHaveFocus();
     expect(onCreated).not.toHaveBeenCalled();
   });
 
@@ -154,6 +158,11 @@ describe("CreateUserForm — after it calls the API", () => {
     expect(onCreated).not.toHaveBeenCalled();
   });
 
+});
+
+// Split on the seam that means something: everything above is about what the
+// server answered, everything here is about what happens once it answered yes.
+describe("CreateUserForm — once the user is created", () => {
   it("refreshes the roster and closes once the user is created", async () => {
     succeeds();
     const { invalidateQueries, onCreated } = renderForm();

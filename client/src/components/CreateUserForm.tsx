@@ -66,7 +66,14 @@ export default function CreateUserForm({
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
-  } = useForm<CreateUserValues>({ resolver: zodResolver(createUserSchema) });
+  } = useForm<CreateUserValues>({
+    resolver: zodResolver(createUserSchema),
+    // react-hook-form recommends defaults for the form as a whole. These inputs
+    // are uncontrolled so they would read "" off the DOM regardless, but
+    // isDirty, watch and reset all compare against this object — the edit form
+    // that copies this pattern needs all three.
+    defaultValues: { name: "", email: "", password: "" },
+  });
 
   async function onSubmit(values: CreateUserValues) {
     try {
@@ -79,9 +86,13 @@ export default function CreateUserForm({
       // lights aria-invalid and clears itself on the next submit, so there is
       // no extra state to reset.
       if (isAxiosError(error) && error.response?.status === 409) {
-        setError("email", {
-          message: "That email address is already in use.",
-        });
+        setError(
+          "email",
+          { message: "That email address is already in use." },
+          // Move the cursor to the field that has to change; without it focus
+          // stays on the submit button that was just pressed.
+          { shouldFocus: true },
+        );
         return;
       }
       // Anything else is not about one field, so it reads as form-level.
@@ -91,10 +102,13 @@ export default function CreateUserForm({
     }
   }
 
-  // Field / FieldLabel / FieldError are shadcn's own form primitives, so the
-  // label-and-error shape is not hand-rolled here. They are markup only — the
-  // id still pairs with htmlFor by hand, because `register` keeps the inputs
-  // uncontrolled and there is no Controller context to carry one.
+  // Written the way shadcn's own Field docs write it: the primitives in place,
+  // id paired with htmlFor by hand, aria-invalid on the control. They are
+  // markup only — no useId, no context — and the docs leave it that way on
+  // purpose so Field fits any form library. Deliberately not wrapped in a
+  // shared field component: matching the documented shape is worth the few
+  // extra lines, because it is the shape anything written about shadcn will
+  // describe.
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate>
       <FieldGroup>
@@ -134,11 +148,11 @@ export default function CreateUserForm({
           <FieldError errors={[errors.password]} />
         </Field>
 
-        {/* Form-level, so it sits outside every Field — and it takes children
-            rather than `errors`, because this is not one field's validation
-            message. FieldError renders nothing when handed nothing, which is
-            why there is no condition around it. */}
-        <FieldError>{errors.root?.message}</FieldError>
+        {/* Form-level, so it sits outside every Field. Same `errors` spelling
+            as the fields above — FieldError takes either that or children, and
+            one of the two is enough to learn. It renders nothing when handed
+            nothing, which is why there is no condition around it. */}
+        <FieldError errors={[errors.root]} />
 
         <DialogFooter>
           <Button type="submit" disabled={isSubmitting}>

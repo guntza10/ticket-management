@@ -42,6 +42,9 @@ export default function LoginPage() {
     formState: { errors, isSubmitting },
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
+    // Recommended for the form as a whole; see CreateUserForm for why it
+    // matters beyond the initial value.
+    defaultValues: { email: "", password: "" },
   });
 
   // Already signed in → skip the login form.

@@ -49,7 +49,11 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     In this project's `radix-nova` style `/r/styles/radix-nova/form.json` carries no
     files at all, so `shadcn add form` installs nothing and reports success. `field.tsx`
     is the component to reach for; adding it also pulled in `separator.tsx`, which
-    `FieldSeparator` imports and nothing in this app uses yet.
+    `FieldSeparator` imports and nothing in this app uses yet. Note what `Field`
+    does **not** do: it has no `useId`, no `htmlFor`, no `aria-invalid` and no
+    `aria-describedby`. The retired `form.tsx` supplied all of that through context;
+    the new one is markup only so it fits any form library, and **every documented
+    example wires those by hand** — that absence is the design, not a gap to patch.
   - **`cn` comes from the `cn` package**, not a local `@/lib/utils` — shadcn 4.x
     generates components that way, so there is no local utils file to keep in sync.
     It is a compiled drop-in for `clsx` + `tailwind-merge`, which were removed with it.
@@ -71,16 +75,44 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   deliberately a copy of `server/src/users/create-user.ts`'s; the API spec
   *"POST /api/users is 400 when the password is shorter than 8 characters"* is what
   catches them drifting.
-- **One field = `Field` + `FieldLabel` + `FieldError`, inside a `FieldGroup`.** shadcn's
-  primitives own that shape, so no page hand-rolls a `div.space-y-2` with a `<p
-  className="text-destructive">` under it — `CreateUserForm` used to carry a local
-  `Field` wrapper for exactly this and it is gone. `FieldError` renders **nothing** when
-  handed nothing, which is why the form-level `errors.root` message needs no condition
-  around it, and it carries `role="alert"`, so a validation message is announced rather
-  than only shown. They are markup only: `register` keeps the inputs uncontrolled, so
-  each `id` still pairs with `htmlFor` by hand and `aria-invalid` is still set on the
-  control. Pass `data-invalid` to `Field` as well — that is what turns the label
-  destructive with the message.
+- **Always pass `defaultValues` to `useForm`.** react-hook-form recommends it for the
+  form as a whole, and these inputs are uncontrolled so they would read `""` off the DOM
+  without it — but `isDirty`, `watch` and `reset` all compare against that object, so a
+  form without it quietly cannot answer "has anything changed?". The edit-user form will
+  want exactly that.
+- **One field = `Field` + `FieldLabel` + the control + `FieldError`, inside a
+  `FieldGroup`.** Written out per field, exactly the way shadcn's own Field docs write
+  it, and **deliberately not wrapped in a shared field component.** A wrapper was built
+  and reverted: it saved five lines a field and cost a render prop, an extra file, and a
+  shape nothing written about shadcn describes. Matching the documented markup is worth
+  the verbosity here, because it is the shape a tutorial, a Stack Overflow answer or a
+  later look at the docs will all agree with.
+  - **The wiring is explicit and that is the documented design.** `Field` and friends
+    carry no `useId`, no `htmlFor`, no `aria-invalid` — they are markup only, so they fit
+    react-hook-form, TanStack Form or Server Actions equally. So each field pairs `id`
+    with `htmlFor` by hand, puts `aria-invalid` on the control, and `data-invalid` on the
+    `Field` (which is what turns the label destructive alongside the message).
+  - **`FieldError` has two entry points; use `errors`.** `errors={[error]}` takes
+    react-hook-form's error *object* and digs out `.message` itself (several objects
+    render as a deduplicated bullet list); `children` takes a plain string, and silently
+    wins if both are passed. One spelling everywhere, `errors.root` included.
+  - **No condition around `FieldError`.** It renders nothing when handed nothing, so
+    `{errors.x && <FieldError…>}` only adds a branch. The docs do write that condition;
+    skipping it is a small, deliberate difference.
+  - **`role="alert"` comes from `FieldError`**, so a message is announced when it
+    appears. `aria-describedby` is *not* wired — see the Known gaps table in the root
+    `CLAUDE.md`. Every documented shadcn example omits it too; don't read its absence as
+    something to go and fix without reading that row first.
+  - **`!!error`, not `Boolean(error)` or `error ? true : false`.** The last of those is
+    an oxlint error (`no-unneeded-ternary`). Between the first two the ecosystem is
+    genuinely split — `no-implicit-coercion` is the rule that forbids `!!` — and this
+    repo leaves that rule off, because shadcn's own generated `field.tsx` writes `!!`
+    and would fail it on every regeneration.
+  - **Checkbox, switch, radio: don't reach for this shape.** A checkbox or switch puts
+    its label *after* the control and reads horizontally —
+    `Field orientation="horizontal"`. A radio or checkbox group is one question over
+    several controls, so the question is not a `<label for>` at all: `FieldSet` +
+    `FieldLegend`, both already in `field.tsx`.
 - **Dialogs that hold a form: controlled Root, form in its own component.** Radix
   unmounts `DialogContent` on close, so keeping the `useForm` call inside the child means
   every open starts blank with no `reset()` to remember, and yesterday's error cannot
@@ -115,10 +147,13 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   reported success yet — nothing else catches it, because every other assertion sees both
   calls happen whichever order they run in.
 - **Server errors from a mutation go through `setError`, not a second dialog.** A 409
-  becomes `setError("email", …)`: it lands in the field-error markup that already
-  exists, lights `aria-invalid` for free, and react-hook-form clears it on the next
-  submit. Anything else becomes `setError("root", …)` above the footer. Stacking a
-  dialog over a form someone has to correct hides the thing they came to fix, so
+  becomes `setError("email", …, { shouldFocus: true })`: it lands in the field-error
+  markup that already exists, lights `aria-invalid` for free, moves the cursor to the
+  field that has to change instead of leaving it on the submit button, and
+  react-hook-form clears it on the next submit. Server errors and zod errors go through
+  the same door, so they surface identically. Anything else becomes
+  `setError("root", …)` above the footer. Stacking a dialog over a form someone has to
+  correct hides the thing they came to fix, so
   `ErrorDialog` is for failures with no field to land on: a rejected sign-in, and a
   sign-out the server refused. Its `title` is a **required** prop — a default would have
   labelled NavBar's failed sign-*out* "Sign in failed", which is the one thing the
