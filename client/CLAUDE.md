@@ -74,7 +74,8 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   anything reachable by fetch is reachable by curl. `CreateUserForm`'s schema is
   deliberately a copy of `server/src/users/create-user.ts`'s; the API spec
   *"POST /api/users is 400 when the password is shorter than 8 characters"* is what
-  catches them drifting.
+  catches them drifting. Background, including `register` vs `Controller` and how
+  `FieldError` decides what to render: `_resources/knowledge/forms-react-hook-form-and-field.md`.
 - **Always pass `defaultValues` to `useForm`.** react-hook-form recommends it for the
   form as a whole, and these inputs are uncontrolled so they would read `""` off the DOM
   without it — but `isDirty`, `watch` and `reset` all compare against that object, so a
@@ -86,7 +87,9 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   and reverted: it saved five lines a field and cost a render prop, an extra file, and a
   shape nothing written about shadcn describes. Matching the documented markup is worth
   the verbosity here, because it is the shape a tutorial, a Stack Overflow answer or a
-  later look at the docs will all agree with.
+  later look at the docs will all agree with. The general rule that decision came from
+  is **When to extract a unit** in the root [`../CLAUDE.md`](../CLAUDE.md) — read it
+  before pulling anything out of a page or a form.
   - **The wiring is explicit and that is the documented design.** `Field` and friends
     carry no `useId`, no `htmlFor`, no `aria-invalid` — they are markup only, so they fit
     react-hook-form, TanStack Form or Server Actions equally. So each field pairs `id`

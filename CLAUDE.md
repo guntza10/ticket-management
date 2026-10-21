@@ -158,6 +158,50 @@ sentence the page no longer had.
 walks through — it needs Postgres up, so check first and say so if it isn't. Never report
 a suite as passing without having run it; "should pass" is not a result.
 
+## When to extract a unit
+
+A component, a hook, a module — the question is the same and it is **not** "is this file
+long?". Length is a symptom; a file that does one thing at 200 lines is fine and a file
+that does three things at 60 is not. Work down this list, and stop at the first **no**.
+
+| Ask | Why it decides |
+| --- | --- |
+| **1. Does something else call it yet?** | One caller means extracting buys a second file to open and nothing else. Two callers mean the thing has an identity of its own. This is the heaviest question — a *no* here usually ends it. |
+| **2. Does it own state or logic?** | A `useState`, a query, a mutation, an event handler — something that can be wrong on its own. Pure JSX moved to another file is the same JSX somewhere less convenient. |
+| **3. Would a test aim at it directly?** | `ProtectedRoute` is tiny with four branches and earns its own file; `HomePage` is a whole page with none and does not. Branches, not size. |
+| **4. Is it genuinely hard to read in place?** | True sometimes, but it is a feeling. On its own it is not enough — it needs one of the three above behind it. |
+
+**Reasons that are not reasons:**
+
+- **"The linter says the function is too long."** A linter reports; it never prescribes.
+  `max-lines-per-function` fired at 106 lines on a three-field form and was used to
+  justify extracting a `FormField` wrapper. The real finding was that the rule counted
+  comment lines in a codebase whose house style is dense comments (`skipComments` fixed
+  it, `77c0154`). Check the tool's configuration before reshaping code to satisfy it.
+- **"It removes duplication."** Repetition is only worth removing when the copies must
+  change together. Five lines of markup repeated per field, each one independently
+  readable, is cheaper than an abstraction a reader has to go and learn.
+- **"We might reuse it later."** Usually not, and the guessed API is usually wrong.
+  Extract when the second caller actually exists.
+- **"It's best practice."** No published practice names a line count. The library's own
+  documented shape is the better default — see below.
+
+**Where this has already been decided here:**
+
+- **`FormField` — built and reverted** (2026-10-20). shadcn's `Field` is markup only and
+  every documented example wires `id` / `htmlFor` / `aria-invalid` by hand, so a wrapper
+  to "fix" that was solving a problem the library does not have. Matching the documented
+  shape beats saving five lines a field, because the documented shape is the one a
+  tutorial, a search result or a later reading of the docs will agree with.
+- **`CreateUserDialog` + `CreateUserForm` — kept**, on question 2 and a technical
+  requirement: Radix unmounts `DialogContent` on close, so the `useForm` call living in
+  the child is what makes every open start blank.
+- **`useCreateUser` — kept in `CreateUserForm.tsx`, not yet its own module.** It passes
+  question 2 and fails question 1 while it is the only one. When `PATCH` and `DELETE`
+  land, three hooks will need the same `["users"]` key from three components, and *that*
+  is the moment they move out together — the extraction follows the second caller, not
+  the other way round.
+
 ## Workflow
 
 - Built **one phase per session** (phases are defined in the implementation plan).
