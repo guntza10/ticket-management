@@ -1,0 +1,4 @@
+{
+  "//": "Not an npm package and not a workspace — nothing installs or depends on this. It exists only to mark core/ as ESM. Node and TypeScript's nodenext resolution both decide CommonJS-vs-ESM from the nearest package.json, and without this one they walk up to the repo root, call these files CommonJS, and reject their `export` statements. Dependencies (zod) resolve from the root node_modules, where npm workspaces hoists them.",
+  "type": "module"
+}

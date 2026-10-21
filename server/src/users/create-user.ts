@@ -1,34 +1,7 @@
-import { z } from "zod";
+import type { CreateUserInput } from "../../../core/schemas/users.ts";
 import type { Role } from "../generated/prisma/client.ts";
 import prisma from "../db.ts";
 import { auth } from "../auth.ts";
-
-// Deliberately duplicated in client/src/components/CreateUserForm.tsx. A shared
-// workspace cannot hold this: the server runs Node-native TypeScript with no
-// build step, and Node refuses to strip types from anything under node_modules
-// — which is exactly where npm symlinks a workspace package. The guard against
-// the two copies drifting is the API spec
-// "POST /api/users is 400 when the password is shorter than 8 characters":
-// change the rule on one side only and that spec goes red.
-//
-// 8 is also Better Auth's default minPasswordLength, but this path never calls
-// its sign-up API, so nothing in the library enforces it for us. The rule is
-// restated here on purpose, not inherited.
-//
-// .toLowerCase() is correctness, not tidiness. /sign-in/email looks a user up
-// by email.toLowerCase(), so a row stored with any capital letter could never
-// sign in — and because the unique index is case-sensitive, it would sit beside
-// the lowercase address as a second row instead of being rejected. Check order
-// is load-bearing: zod runs left to right, so z.email() still refuses a
-// space-padded address before the transform ever runs, which is the same answer
-// /sign-in/email gives.
-export const createUserSchema = z.object({
-  name: z.string().trim().min(1, "Name is required."),
-  email: z.email("Enter a valid email address.").toLowerCase(),
-  password: z.string().min(8, "Password must be at least 8 characters."),
-});
-
-export type CreateUserInput = z.infer<typeof createUserSchema>;
 
 // The same allow-list GET /api/users selects, so both endpoints answer with one
 // shape and a spec can assert a single field set for the two of them.

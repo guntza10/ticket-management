@@ -71,11 +71,12 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - **Forms:** react-hook-form + a zod schema (`zodResolver`). One schema is the source of
   truth for both the rules and the type (`z.infer`). zod v4 → top-level `z.email()`.
   A form's schema is **not** the security boundary — the server re-validates, because
-  anything reachable by fetch is reachable by curl. `CreateUserForm`'s schema is
-  deliberately a copy of `server/src/users/create-user.ts`'s; the API spec
-  *"POST /api/users is 400 when the password is shorter than 8 characters"* is what
-  catches them drifting. Background, including `register` vs `Controller` and how
-  `FieldError` decides what to render: `_resources/knowledge/forms-react-hook-form-and-field.md`.
+  anything reachable by fetch is reachable by curl. Validating here only saves a
+  round-trip. **The schema itself is shared**: `CreateUserForm` imports
+  `createUserSchema` from `core/schemas/users.ts`, the same file the API route and the
+  seed script parse with, so there is nothing left to drift. Background, including
+  `register` vs `Controller` and how `FieldError` decides what to render:
+  `_resources/knowledge/forms-react-hook-form-and-field.md`.
 - **Always pass `defaultValues` to `useForm`.** react-hook-form recommends it for the
   form as a whole, and these inputs are uncontrolled so they would read `""` off the DOM
   without it — but `isDirty`, `watch` and `reset` all compare against that object, so a

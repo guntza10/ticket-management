@@ -50,6 +50,7 @@ server enables CORS (client origin + credentials). Details in the workspace file
 
 - `client/` — React SPA (see `client/CLAUDE.md`)
 - `server/` — Express API (see `server/CLAUDE.md`)
+- `core/` — code both workspaces import (see **Shared code** below)
 - `e2e/` — Playwright specs (`*.spec.ts`); config is `playwright.config.ts` at the root
 - `_resources/` — planning docs (implementation plan, requirements, knowledge notes)
 
@@ -157,6 +158,35 @@ sentence the page no longer had.
 `npm run test:client`. Run `npm run test:e2e` when the change could affect a flow a user
 walks through — it needs Postgres up, so check first and say so if it isn't. Never report
 a suite as passing without having run it; "should pass" is not a result.
+
+## Shared code (`core/`)
+
+One definition, imported by both sides — `core/schemas/users.ts` is read by
+`server/src/users/users.routes.ts`, `server/prisma/seed.ts` and
+`client/src/components/CreateUserForm.tsx`. Put anything here that **both** workspaces
+must agree on; a rule that only one side enforces does not belong in it.
+
+- **It is a plain folder, not an npm workspace, and that is the whole trick.** The
+  server runs TypeScript natively with no build step, and Node refuses to strip types
+  from anything under `node_modules` — which is exactly where npm symlinks a workspace
+  package. A folder imported by relative path never goes near `node_modules`, so it
+  works. Do not "tidy this up" into a workspace; it will break the server at runtime.
+- **Import it by relative path with the `.ts` extension** —
+  `../../../core/schemas/users.ts`. Node needs the extension; the client has
+  `allowImportingTsExtensions`, so the same spelling works on both sides. No alias:
+  one spelling means one thing to look for.
+- **`core/package.json` exists only to say `"type": "module"`.** Node and TypeScript's
+  `nodenext` resolution both pick CommonJS-vs-ESM from the nearest `package.json`;
+  without it they walk up to the repo root, call these files CommonJS, and reject their
+  `export`s. It installs nothing and depends on nothing — `zod` resolves from the root
+  `node_modules` where npm workspaces hoists it.
+- **Both workspaces type-check it**, via `"../core"` in each `include`. That is
+  deliberate: the same file has to compile under Node-native TS *and* under the
+  bundler, and only running both proves it. The root `.oxlintrc.json` lints it
+  (`client` and `server` are in its `ignorePatterns`), so `npm run lint:e2e` covers it
+  despite the name. `.claude/hooks/ts-check.sh` routes a `core/` edit to all three.
+- **Keep it free of runtime concerns.** No Prisma, no Express, no React, no `process.env`
+  — anything that only one side can load stops the other side importing the file at all.
 
 ## When to extract a unit
 

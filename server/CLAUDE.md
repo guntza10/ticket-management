@@ -98,11 +98,14 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
 - **Duplicate address: catch Prisma `P2002`, don't pre-check.** A `findUnique` first is
   not race-proof, so it buys a round-trip and no correctness — and it makes the catch
   look unreachable, which is how the catch ends up untested and then wrong.
-- **The validation schema is duplicated in `client/src/components/CreateUserForm.tsx`.**
-  A shared workspace cannot hold it: the server runs Node-native TypeScript with no
-  build step, and Node refuses to strip types under `node_modules`, which is exactly
-  where npm symlinks a workspace package. The guard is the API spec *"POST /api/users is
-  400 when the password is shorter than 8 characters"* — relax one copy and it goes red.
+- **The validation schema lives in `core/schemas/users.ts`, shared with the client.**
+  `users.routes.ts` and `prisma/seed.ts` both import it, and so does
+  `client/src/components/CreateUserForm.tsx` — one definition, three readers.
+  It was duplicated until 2026-10-22 on the belief that sharing was impossible here.
+  That was half right: Node refuses to strip types **under `node_modules`**, which is
+  exactly where npm symlinks a *workspace package* — but `core/` is a plain folder
+  imported by relative path, so the restriction never applies. See the root
+  `CLAUDE.md` → **Shared code (`core/`)** for the wiring that keeps it honest.
 
 ## Error handling
 

@@ -15,11 +15,13 @@ case "$file" in
   *) exit 0 ;;
 esac
 
-# Which workspace does the file belong to? "e2e" is not an npm workspace — the
-# Playwright config and specs live at the repo root, gated by root-level scripts.
+# Which workspace does the file belong to? "e2e" and "core" are not npm
+# workspaces — the Playwright config, the specs and the shared schemas all live
+# at the repo root, gated by root-level scripts.
 case "$file" in
   */client/* | client/*) ws=client ;;
   */server/* | server/*) ws=server ;;
+  */core/* | core/*) ws=core ;;
   */e2e/* | e2e/* | */playwright.config.ts | playwright.config.ts) ws=e2e ;;
   *) exit 0 ;;
 esac
@@ -30,6 +32,14 @@ repo="${CLAUDE_PROJECT_DIR:-$(git -C "$(dirname "$file")" rev-parse --show-tople
 
 if [ "$ws" = "e2e" ]; then
   out=$(npm run --silent lint:e2e 2>&1 && npm run --silent typecheck:e2e 2>&1)
+elif [ "$ws" = "core" ]; then
+  # core/ is compiled by *both* workspaces, each with its own compilerOptions,
+  # so a change here has to satisfy both — Node-native TS on the server and the
+  # bundler on the client. The root oxlint config is the one that lints core
+  # itself (client and server are in its ignorePatterns).
+  out=$(npm run --silent lint:e2e 2>&1 \
+    && npm run --silent typecheck --workspace server 2>&1 \
+    && npm run --silent typecheck --workspace client 2>&1)
 else
   out=$(npm run --silent lint --workspace "$ws" 2>&1 && npm run --silent typecheck --workspace "$ws" 2>&1)
 fi

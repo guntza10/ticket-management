@@ -1,9 +1,7 @@
 import type { Role } from "../src/generated/prisma/client.ts";
 import prisma from "../src/db.ts";
-import {
-  createUserSchema,
-  createUserWithPassword,
-} from "../src/users/create-user.ts";
+import { createUserSchema } from "../../core/schemas/users.ts";
+import { createUserWithPassword } from "../src/users/create-user.ts";
 
 // Seed accounts from env-provided credentials. Idempotent: an account that
 // already exists is left alone, so this is safe to re-run.

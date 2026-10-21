@@ -1,6 +1,5 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { api } from "@/lib/api";
@@ -14,22 +13,14 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  createUserSchema,
+  type CreateUserInput,
+} from "../../../core/schemas/users.ts";
 
-// Deliberately duplicated in server/src/users/create-user.ts — see the comment
-// there for why a shared workspace cannot hold it. The guard against the two drifting
-// is the API spec "POST /api/users is 400 when the password is shorter than 8
-// characters": relax the rule on one side only and that spec goes red.
-//
-// This copy is not the security boundary. The server re-checks every field,
-// because anything reachable by fetch is reachable by curl; validating here
-// only saves a round-trip.
-const createUserSchema = z.object({
-  name: z.string().trim().min(1, "Name is required."),
-  email: z.email("Enter a valid email address.").toLowerCase(),
-  password: z.string().min(8, "Password must be at least 8 characters."),
-});
-
-type CreateUserValues = z.infer<typeof createUserSchema>;
+// Validating here is not the security boundary — it only saves a round-trip.
+// The server parses the same schema from the same file, because anything
+// reachable by fetch is reachable by curl.
 
 // The write and the cache it has to refresh, named as one thing: at the call
 // site this reads as `useCreateUser()` instead of a queryClient, a useMutation
@@ -46,7 +37,7 @@ function useCreateUser() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (user: CreateUserValues) => api.post("/api/users", user),
+    mutationFn: (user: CreateUserInput) => api.post("/api/users", user),
     // Returned, not fired and forgotten. mutateAsync then settles only once the
     // roster has actually refetched, so the dialog closes onto a table that
     // already holds the new row instead of racing it.
@@ -66,7 +57,7 @@ export default function CreateUserForm({
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
-  } = useForm<CreateUserValues>({
+  } = useForm<CreateUserInput>({
     resolver: zodResolver(createUserSchema),
     // react-hook-form recommends defaults for the form as a whole. These inputs
     // are uncontrolled so they would read "" off the DOM regardless, but
@@ -75,7 +66,7 @@ export default function CreateUserForm({
     defaultValues: { name: "", email: "", password: "" },
   });
 
-  async function onSubmit(values: CreateUserValues) {
+  async function onSubmit(values: CreateUserInput) {
     try {
       await mutateAsync(values);
       onCreated();

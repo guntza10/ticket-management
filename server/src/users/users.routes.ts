@@ -3,7 +3,8 @@ import prisma from "../db.ts";
 import { Prisma } from "../generated/prisma/client.ts";
 import { requireAuth } from "../require-auth.ts";
 import { requireAdmin } from "../require-admin.ts";
-import { createUserSchema, createUserWithPassword } from "./create-user.ts";
+import { createUserSchema } from "../../../core/schemas/users.ts";
+import { createUserWithPassword } from "./create-user.ts";
 
 // Mounted at /api/users by index.ts, so every path below is relative to that.
 // Keeping the prefix at the mount point means it is written once and a rename
