@@ -1,5 +1,5 @@
 import { useState } from "react";
-import CreateUserForm from "@/components/CreateUserForm";
+import CreateUserForm from "./CreateUserForm";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

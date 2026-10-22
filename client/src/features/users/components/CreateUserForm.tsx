@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import {
   createUserSchema,
   type CreateUserInput,
-} from "../../../core/schemas/users.ts";
+} from "../../../../../core/schemas/users.ts";
 
 // Validating here is not the security boundary — it only saves a round-trip.
 // The server parses the same schema from the same file, because anything

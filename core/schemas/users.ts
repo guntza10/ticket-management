@@ -3,7 +3,8 @@ import { z } from "zod";
 // The one definition of what a valid new user looks like. Both sides import
 // this file directly: `server/src/users/users.routes.ts` validates the request
 // body with it, `server/prisma/seed.ts` parses the env-seeded admin through it,
-// and `client/src/components/CreateUserForm.tsx` hands it to zodResolver.
+// and `client/src/features/users/components/CreateUserForm.tsx` hands it to
+// zodResolver.
 //
 // It lived in two hand-kept copies until 2026-10-22. They could only drift in
 // one direction without anything noticing — a rule tightened on the client and

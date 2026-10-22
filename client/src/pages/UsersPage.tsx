@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import CreateUserDialog from "@/components/CreateUserDialog";
+import CreateUserDialog from "@/features/users/components/CreateUserDialog";
 import NavBar from "@/components/NavBar";
 import {
   Card,

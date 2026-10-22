@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AxiosError, type AxiosResponse } from "axios";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "@/lib/api";
-import CreateUserForm from "@/components/CreateUserForm";
+import CreateUserForm from "./CreateUserForm";
 
 // The one boundary this form talks to. Faking it is what buys the two answers a
 // running server will not give on request: a taken address and a plain failure.

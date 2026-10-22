@@ -27,5 +27,51 @@
       { "max": 100, "skipComments": true, "skipBlankLines": true }
     ],
     "max-lines": ["warn", { "max": 300 }]
-  }
+  },
+  // Layer direction, enforced. `pages` may import `features`, and both may
+  // import the shared folders — never the other way round. oxlint has no
+  // `import/no-restricted-paths`, so each zone is an override that forbids the
+  // imports pointing the wrong way.
+  "overrides": [
+    {
+      // A feature reaches down to shared code only. Its own files are imported
+      // relatively (`./CreateUserForm`), which is why every `@/features/...`
+      // spelling in here is by definition another feature.
+      "files": ["src/features/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@/features/**"],
+                "message": "A feature may not import another feature. Import its own files relatively (./Thing), and move anything two features need into src/components or src/lib."
+              },
+              {
+                "group": ["@/pages/**", "@/App*"],
+                "message": "A feature may not import the page that mounts it — that is the layer above. Pass what it needs in as props."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // The shared layer is the bottom: it cannot know who uses it.
+      "files": ["src/components/**", "src/lib/**", "src/test/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@/features/**", "@/pages/**", "@/App*"],
+                "message": "Shared code may not import a feature or a page. If it needs one, it is not shared — move it into that feature."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

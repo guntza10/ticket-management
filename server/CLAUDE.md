@@ -50,6 +50,22 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
 - **`index.ts` holds wiring, not routes:** middleware order, mounts, the error handler,
   `listen`. The only handlers left in it are `/api/me`, `/` and `/health` — `/api/me`
   moves the day auth gets a module of its own.
+- **Imports only ever point downward, and right now nothing but this bullet says so.**
+  `index.ts` may import a module; a module (`users/`) may import the shared files at
+  `src/` root (`db.ts`, `auth.ts`, `require-*.ts`) and `core/`; those shared files may
+  import neither a module nor `index.ts`, and **one module may not import another** —
+  anything two modules need moves down to `src/` root or `core/`. Every import in
+  `src/` already obeys all three; the point of writing it down is the day `tickets/`
+  arrives and reaching into `users/create-user.ts` looks like the shortest path.
+  The client enforces the same three with oxlint (**Where a new file goes** in
+  [`../client/CLAUDE.md`](../client/CLAUDE.md)); this side cannot yet, because oxlint
+  has no `import/no-restricted-paths` and the server's imports are all relative, so a
+  glob cannot tell a sideways `../tickets/create-ticket.ts` from a legitimate
+  `../generated/prisma/client.ts` — and with one module there is no second name to
+  forbid. Two of the three zones *are* expressible today (shared root must not import
+  `./*/**`; a module must not import `../index.ts`); whether to spell those now, wait
+  for `tickets/`, or give the server a path alias via Node's `imports` field is an open
+  decision — ask before picking one.
 - **The path prefix lives at the mount**, so `app.use("/api/users", usersRouter)` pairs
   with `router.get("/")`. A rename then touches one line instead of every route.
 - **Guards go on the router when the whole resource shares them.** `users.routes.ts`
@@ -107,7 +123,8 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
   look unreachable, which is how the catch ends up untested and then wrong.
 - **The validation schema lives in `core/schemas/users.ts`, shared with the client.**
   `users.routes.ts` and `prisma/seed.ts` both import it, and so does
-  `client/src/components/CreateUserForm.tsx` — one definition, three readers.
+  `client/src/features/users/components/CreateUserForm.tsx` — one definition,
+  three readers.
   It was duplicated until 2026-10-22 on the belief that sharing was impossible here.
   That was half right: Node refuses to strip types **under `node_modules`**, which is
   exactly where npm symlinks a *workspace package* — but `core/` is a plain folder

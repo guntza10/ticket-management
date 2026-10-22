@@ -391,7 +391,7 @@ radio group **ไม่ใช่ `<label for>`** — ยัดเข้าท่
 
 ## อ้างอิงในโปรเจกต์
 
-- `client/src/components/CreateUserForm.tsx` — ฟอร์มเต็มรูปแบบ: schema, mutation, `setError`, 3 fields
+- `client/src/features/users/components/CreateUserForm.tsx` — ฟอร์มเต็มรูปแบบ: schema, mutation, `setError`, 3 fields
 - `client/src/pages/LoginPage.tsx` — ฟอร์มที่ error ไปลง `ErrorDialog` แทน `errors.root`
 - `client/src/components/ui/field.tsx` — ตัว `Field` ทั้งชุด (generated, ห้ามแก้)
 - `client/CLAUDE.md` — convention ที่ตกลงกันแล้ว (ส่วน **Forms** และ **One field = …**)

@@ -163,18 +163,21 @@ a suite as passing without having run it; "should pass" is not a result.
 
 One definition, imported by both sides — `core/schemas/users.ts` is read by
 `server/src/users/users.routes.ts`, `server/prisma/seed.ts` and
-`client/src/components/CreateUserForm.tsx`. Put anything here that **both** workspaces
-must agree on; a rule that only one side enforces does not belong in it.
+`client/src/features/users/components/CreateUserForm.tsx`. Put anything here
+that **both** workspaces must agree on; a rule that only one side enforces does
+not belong in it.
 
 - **It is a plain folder, not an npm workspace, and that is the whole trick.** The
   server runs TypeScript natively with no build step, and Node refuses to strip types
   from anything under `node_modules` — which is exactly where npm symlinks a workspace
   package. A folder imported by relative path never goes near `node_modules`, so it
   works. Do not "tidy this up" into a workspace; it will break the server at runtime.
-- **Import it by relative path with the `.ts` extension** —
-  `../../../core/schemas/users.ts`. Node needs the extension; the client has
-  `allowImportingTsExtensions`, so the same spelling works on both sides. No alias:
-  one spelling means one thing to look for.
+- **Import it by relative path with the `.ts` extension.** Node needs the extension;
+  the client has `allowImportingTsExtensions`, so the same spelling works on both
+  sides. How many `../` depends on how deep the importing file sits — two from
+  `server/prisma/seed.ts`, three from `server/src/users/`, five from
+  `client/src/features/users/components/` — so copy the path from a neighbour rather
+  than from this line. No alias: one spelling means one thing to look for.
 - **`core/package.json` exists only to say `"type": "module"`.** Node and TypeScript's
   `nodenext` resolution both pick CommonJS-vs-ESM from the nearest `package.json`;
   without it they walk up to the repo root, call these files CommonJS, and reject their
@@ -231,6 +234,40 @@ that does three things at 60 is not. Work down this list, and stop at the first 
   land, three hooks will need the same `["users"]` key from three components, and *that*
   is the moment they move out together — the extraction follows the second caller, not
   the other way round.
+
+### Folder structure: adopt the rule, not the empty folders
+
+A published convention is a **list of places things may live**, not a checklist to build
+on day one. The React reference people actually use is
+[bulletproof-react](https://github.com/alan2207/bulletproof-react/blob/master/docs/project-structure.md)
+— and its own docs say *"You don't need all of these folders for every feature. Only
+include the ones that are necessary."*
+
+Split any convention into two parts before adopting it:
+
+- **Its import-direction rules** — which layer may know about which. Expensive to
+  retrofit, because by then every file that crossed the line has to be found and
+  rewritten. **Take these immediately, and make them a lint rule**, not a paragraph.
+- **Its folder names** — cheap either way. Moving a file is `git mv` plus the imports
+  `tsc` points at; no logic changes and no test changes. So there is nothing to gain by
+  guessing early and nothing lost by waiting.
+
+What is actually expensive is **a layer with no content in it**: `users.controller.ts` →
+`users.service.ts` → `users.repository.ts` where each one only forwards to the next, so
+reading one endpoint means opening four files to reach a single Prisma call — and the
+service API that was guessed before the tickets domain existed is the one that turns out
+wrong. Compare `server/src/users/create-user.ts`, which exists because `seed.ts` needed
+the same function: the layer followed the second caller.
+
+**Decided here (2026-10-22), client:** adopted `src/features/<domain>/` plus the
+three-layer direction rule, enforced in `client/.oxlintrc.json` — see **Where a new
+file goes** in [`client/CLAUDE.md`](client/CLAUDE.md). Deliberately *not* adopted:
+`src/app/routes/` (`pages/` already holds routes, and bulletproof itself says that layer
+depends on the meta-framework — React Router declarative mode has no such layer),
+renaming `src/test/` to `testing/`, and pre-creating `api/` · `hooks/` · `types/` inside
+a feature. **Server keeps `src/<domain>/` by domain** — Express prescribes no structure
+at all — and grows a service or repository file only when a second caller or a rule worth
+testing without HTTP shows up.
 
 ## Workflow
 

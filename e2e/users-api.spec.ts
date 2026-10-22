@@ -208,9 +208,11 @@ test.describe("Users API — creating, rejected input", () => {
     expect(response.status()).toBe(409);
   });
 
-  // The one spec holding the duplicated schema together: the same rule lives in
-  // client/src/components/CreateUserForm.tsx, and relaxing either copy alone
-  // turns this red.
+  // Not a duplicate-schema guard any more: core/schemas/users.ts has been the
+  // single definition since the client stopped keeping its own copy. What this
+  // still proves is that the rule is enforced *here* — the form is reachable by
+  // curl, so a rule the client parses and the server does not is no rule at all.
+  // Relax .min(8) in core and this is the test that goes red.
   test("POST /api/users is 400 when the password is shorter than 8 characters", async ({
     request,
   }) => {

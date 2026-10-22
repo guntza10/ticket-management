@@ -205,6 +205,38 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 ## Structure
 
 - `src/pages/` — route pages (`LoginPage`, `HomePage`, `UsersPage`)
-- `src/components/` — app components; `src/components/ui/` — shadcn (generated)
+- `src/features/<domain>/` — everything that only one domain uses, e.g.
+  `features/users/components/` (`CreateUserDialog`, `CreateUserForm`)
+- `src/components/` — components **two or more** features or pages use
+  (`NavBar`, `ProtectedRoute`, `ErrorDialog`, `PasswordInput`);
+  `src/components/ui/` — shadcn (generated)
 - `src/lib/` — `auth-client.ts`, `api.ts` (`API_URL` + the `api` axios instance)
 - `src/test/setup.ts` — Vitest setup (jest-dom matchers + per-test cleanup)
+
+### Where a new file goes
+
+Three layers, and imports only ever point **downward**:
+
+```
+pages/                  →  features/ · components/ · lib/
+features/<domain>/      →  components/ · lib/   (not a page, not a sibling feature)
+components/ lib/ test/  →  nothing above them
+```
+
+- **Start in the feature.** A component, a hook or a schema used by one domain lives in
+  `features/<domain>/`, not in `components/`. It moves to `components/` the day a second
+  feature or page actually imports it — the same "does something else call it yet?" test
+  as **When to extract a unit** in the root [`../CLAUDE.md`](../CLAUDE.md), applied to
+  folders instead of files.
+- **Inside a feature, import relatively** (`./CreateUserForm`). Crossing a layer uses
+  `@/...`. So the spelling of an import says whether it crossed a boundary, and it is
+  what lets one lint rule cover every feature added later without new config.
+- **`features/<domain>/api/`, `hooks/`, `types/` are not created until something goes in
+  them.** `useCreateUser` is still inside `CreateUserForm.tsx` on purpose; it moves to
+  `features/users/api/` when `PATCH` and `DELETE` need the same `["users"]` key.
+- **The direction is a hard gate, not a guideline.** `.oxlintrc.json` has two
+  `overrides` zones running `no-restricted-imports`: one forbids `features/**` from
+  importing `@/features/**` (another feature) or `@/pages/**`, the other forbids
+  `components/**`, `lib/**` and `test/**` from importing either. oxlint has no
+  `import/no-restricted-paths`, which is why it is spelled this way. Both zones were
+  proven to fire by writing a bad import and watching `oxlint` go red.
