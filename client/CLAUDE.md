@@ -25,7 +25,11 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 
 - **Path alias `@/` → `src/`.** In `tsconfig.json` + `tsconfig.app.json` (`paths` only —
   **no `baseUrl`**; TS 6 deprecates it and fails the build) and `vite.config.ts`
-  (`resolve.alias` via `import.meta.dirname`). Prefer `@/...` imports.
+  (`resolve.alias` via `import.meta.dirname`). Both are needed: `tsc` reads the first to
+  type-check, Vite the second to actually resolve the file, so setting one alone passes
+  one gate and fails the other. Prefer `@/...` imports — **except between files inside
+  the same feature, which name each other relatively** (`./CreateUserForm`); see
+  **Where a new file goes**.
 - **TypeScript:** `verbatimModuleSyntax` → use `import type` for type-only imports;
   `erasableSyntaxOnly` → no enums / parameter-properties.
 - **Clean TypeScript is enforced, not optional.** `strict` + `noUncheckedIndexedAccess`
@@ -235,15 +239,41 @@ components/ lib/ test/  →  nothing above them
   feature or page actually imports it — the same "does something else call it yet?" test
   as **When to extract a unit** in the root [`../CLAUDE.md`](../CLAUDE.md), applied to
   folders instead of files.
-- **Inside a feature, import relatively** (`./CreateUserForm`). Crossing a layer uses
-  `@/...`. So the spelling of an import says whether it crossed a boundary, and it is
-  what lets one lint rule cover every feature added later without new config.
+- **Inside a feature, import relatively** (`./CreateUserForm`); leaving the feature uses
+  `@/...`. The spelling therefore says whether the import left the folder, which is what
+  lets one lint rule cover every feature added later with no new config: inside
+  `src/features`, any `@/features/...` is by definition some *other* feature.
+- **This is a deliberate deviation from bulletproof-react, picked with its cost in
+  view.** That project's `project-standards.md` says the opposite — *"Absolute imports
+  should always be configured and used… wherever you move the file, all the imports will
+  remain intact"* — and keeps cross-feature imports out with `import/no-restricted-paths`
+  zones carrying `except: ['./users']`, one zone per feature. oxlint has neither that
+  rule nor an `except`, and two attempts to recreate it were tested: a glob negation
+  (`**/features/!(users)/**`) is simply dead — it matched neither the own-feature nor the
+  cross-feature import — while listing every other feature by name does work, which is
+  bulletproof's shape and grows with every pair of features. The relative convention was
+  chosen over that because of how each one fails: forget the convention and oxlint says
+  so with a message naming the fix, whereas forgetting to add a zone for a new feature
+  leaves it silently unguarded. Note that this cuts against the reasoning that retired
+  `FormField` (match the documented shape) — the difference is that a missing lint zone
+  cannot be noticed by reading the code, and a wrongly-spelled import can.
 - **`features/<domain>/api/`, `hooks/`, `types/` are not created until something goes in
   them.** `useCreateUser` is still inside `CreateUserForm.tsx` on purpose; it moves to
   `features/users/api/` when `PATCH` and `DELETE` need the same `["users"]` key.
 - **The direction is a hard gate, not a guideline.** `.oxlintrc.json` has two
-  `overrides` zones running `no-restricted-imports`: one forbids `features/**` from
-  importing `@/features/**` (another feature) or `@/pages/**`, the other forbids
-  `components/**`, `lib/**` and `test/**` from importing either. oxlint has no
-  `import/no-restricted-paths`, which is why it is spelled this way. Both zones were
-  proven to fire by writing a bad import and watching `oxlint` go red.
+  `overrides` zones running `no-restricted-imports`: one stops `src/features/**` from
+  importing another feature or a page, the other stops `src/components/**`, `src/lib/**`
+  and `src/test/**` from importing either. oxlint has no `import/no-restricted-paths`,
+  which is why it is spelled this way.
+- **The patterns read `**/features/**`, not `@/features/**`, and the leading `**` is
+  load-bearing.** Written against the alias alone, the rule let
+  `../features/users/components/CreateUserDialog` through from `src/components/` — a
+  wrong direction spelled relatively is still a wrong direction, and the alias-only
+  version only ever caught the polite way of writing it. Six spellings were proven to
+  go red: shared → feature and shared → page, each as alias and as relative path;
+  feature → page; feature → another feature by alias.
+- **One case is deliberately not caught:** a feature reaching sideways by relative
+  path, `../../tickets/components/TicketTable`. A glob that matches it (`../*/**`) also
+  matches `../../../../../core/schemas/users.ts`, because `*` matches `..` — tested, and
+  it turned the legitimate `core/` import red. Left open because `@/features/...` is how
+  anyone would actually write a cross-feature import, and that spelling is caught.

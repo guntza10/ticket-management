@@ -44,11 +44,11 @@
           {
             "patterns": [
               {
-                "group": ["@/features/**"],
-                "message": "A feature may not import another feature. Import its own files relatively (./Thing), and move anything two features need into src/components or src/lib."
+                "group": ["**/features/**"],
+                "message": "Inside src/features, name your own feature's files relatively (./Thing) and never name another feature at all. Anything two features need belongs in src/components or src/lib."
               },
               {
-                "group": ["@/pages/**", "@/App*"],
+                "group": ["**/pages/**", "**/App*"],
                 "message": "A feature may not import the page that mounts it — that is the layer above. Pass what it needs in as props."
               }
             ]
@@ -65,7 +65,7 @@
           {
             "patterns": [
               {
-                "group": ["@/features/**", "@/pages/**", "@/App*"],
+                "group": ["**/features/**", "**/pages/**", "**/App*"],
                 "message": "Shared code may not import a feature or a page. If it needs one, it is not shared — move it into that feature."
               }
             ]
