@@ -3,9 +3,13 @@ import type { Role } from "../generated/prisma/client.ts";
 import prisma from "../db.ts";
 import { auth } from "../auth.ts";
 
-// The same allow-list GET /api/users selects, so both endpoints answer with one
-// shape and a spec can assert a single field set for the two of them.
-const PUBLIC_USER_FIELDS = {
+// The field set both /api/users endpoints answer with — GET imports this too,
+// so a column added here reaches the create response and the roster together
+// and the two cannot disagree. It used to say "the same allow-list GET selects"
+// while GET wrote its own copy two files away, which read as a problem already
+// solved. `e2e/users-api.spec.ts` asserts this exact key set on every row of
+// both answers, so it is still checked from the outside as well.
+export const PUBLIC_USER_FIELDS = {
   id: true,
   name: true,
   email: true,

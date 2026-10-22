@@ -4,7 +4,10 @@ import { Prisma } from "../generated/prisma/client.ts";
 import { requireAuth } from "../require-auth.ts";
 import { requireAdmin } from "../require-admin.ts";
 import { createUserSchema } from "../../../core/schemas/users.ts";
-import { createUserWithPassword } from "./create-user.ts";
+import {
+  createUserWithPassword,
+  PUBLIC_USER_FIELDS,
+} from "./create-user.ts";
 
 // Mounted at /api/users by index.ts, so every path below is relative to that.
 // Keeping the prefix at the mount point means it is written once and a rename
@@ -27,13 +30,7 @@ router.use(requireAuth, requireAdmin);
 // as POST below does for a duplicate address.
 router.get("/", async (_req, res) => {
   const users = await prisma.user.findMany({
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      createdAt: true,
-    },
+    select: PUBLIC_USER_FIELDS,
     orderBy: { createdAt: "asc" },
   });
   res.json({ users });

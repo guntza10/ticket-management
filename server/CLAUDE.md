@@ -69,8 +69,15 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
   (without it every `res.locals.session` is `any`).
 - **Endpoints returning user data always `select` an allow-list of fields.** A bare
   `findMany()` ships every column the table happens to have, including whatever the next
-  migration adds. `GET` and `POST /api/users` answer with the same five fields, and
-  `e2e/users-api.spec.ts` asserts the exact key set on both.
+  migration adds. That list is **one exported constant** — `PUBLIC_USER_FIELDS` in
+  `users/create-user.ts` — which `GET` and `POST /api/users` both import, so a column
+  added to it reaches every answer at once. `PATCH` and `DELETE` should import it too
+  rather than writing a `select` of their own; the two that existed were hand-kept
+  copies until 2026-10-22, with a comment claiming they were shared. A plain object is
+  enough, no `as const` or `satisfies`: Prisma still narrows the result type from it,
+  so reading a field that was not selected is a type error.
+  `e2e/users-api.spec.ts` asserts the exact key set on every row of both answers, which
+  is the check that survives someone reintroducing a second copy.
 
 ## Creating accounts
 
