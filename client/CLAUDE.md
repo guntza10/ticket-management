@@ -122,7 +122,12 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   every open starts blank with no `reset()` to remember, and yesterday's error cannot
   reappear. Keep `open` on the Root (success has to close it from inside); a
   `DialogTrigger` inside a controlled Root still works — it just calls `onOpenChange`.
-  `CreateUserDialog` + `CreateUserForm` are the pattern.
+  `CreateUserDialog` + `CreateUserForm` are the pattern, and `CreateUserDialog.test.tsx`
+  is what holds it in place: it opens, types, closes, reopens, and asserts both the draft
+  and a 409's message are gone. Nothing else catches a regression here —
+  `create-user.spec.ts` opens the dialog in three tests but never twice inside one, so
+  moving the `useForm` call up into the dialog, or adding `forceMount`, would leave the
+  whole E2E suite green.
 - **Auth:** go through `src/lib/auth-client.ts` (`signIn` / `signOut` / `useSession`).
 - **API calls:** use the `api` axios instance from `src/lib/api.ts` — never a bare
   `fetch`. It carries `baseURL` and `withCredentials: true`; the API is cross-origin, so
@@ -211,7 +216,9 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   (`NavBar`, `ProtectedRoute`, `ErrorDialog`, `PasswordInput`);
   `src/components/ui/` — shadcn (generated)
 - `src/lib/` — `auth-client.ts`, `api.ts` (`API_URL` + the `api` axios instance)
-- `src/test/setup.ts` — Vitest setup (jest-dom matchers + per-test cleanup)
+- `src/test/` — test support, not tests: `setup.ts` (jest-dom matchers + per-test
+  cleanup) and `axios-error.ts` (`axiosErrorWithStatus`, the rejection shape the app's
+  `isAxiosError` branches actually recognise)
 
 ### Where a new file goes
 

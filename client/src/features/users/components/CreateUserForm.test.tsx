@@ -1,32 +1,23 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { AxiosError, type AxiosResponse } from "axios";
+import type { AxiosResponse } from "axios";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "@/lib/api";
 import CreateUserForm from "./CreateUserForm";
+import { axiosErrorWithStatus } from "@/test/axios-error";
 
-// The one boundary this form talks to. Faking it is what buys the two answers a
-// running server will not give on request: a taken address and a plain failure.
+// The one boundary this form talks to. Faking it is what buys the three answers
+// a running server will not give on request: a taken address, a plain failure,
+// and a request that never comes back.
 vi.mock("@/lib/api", () => ({ api: { post: vi.fn() } }));
 
-// The form is tested on its own, not through CreateUserDialog. Radix sets
-// pointer-events:none on the body while a dialog is open, which is the usual
-// way jsdom dialog tests turn flaky — and opening and closing proves nothing
-// the E2E spec does not already prove in a real browser. Every branch worth
-// testing lives in here.
-
-// The form reads only `response.status`, so the rest of an AxiosError is noise.
-// It has to be a real AxiosError, though: isAxiosError checks a flag the class
-// sets, and a plain Error would fall through to the generic message.
-function axiosErrorWithStatus(status: number) {
-  return new AxiosError(
-    `Request failed with status code ${status}`,
-    String(status),
-    undefined,
-    undefined,
-    { status } as AxiosResponse,
-  );
-}
+// The form is rendered on its own here, without CreateUserDialog around it.
+// Every branch below is the form's own, and wrapping each test in the dialog
+// would only add Radix's open state to reach the same markup.
+//
+// What the dialog contributes is the one guarantee this file cannot state —
+// that closing it throws the form away, so the next open starts blank. That
+// lives with the dialog, in CreateUserDialog.test.tsx.
 
 function succeeds() {
   vi.mocked(api.post).mockResolvedValue({ data: { user: {} } } as AxiosResponse);
@@ -106,6 +97,47 @@ describe("CreateUserForm — before it calls the API", () => {
 });
 
 describe("CreateUserForm — after it calls the API", () => {
+  // The only thing between an impatient second click and a second POST: Better
+  // Auth's rate limiter covers /api/auth/* only, so nothing on the server
+  // throttles this route. The duplicate would come back 409 and surface as
+  // "already in use" on a form that had just succeeded — the most confusing
+  // answer possible to a request that was not wrong.
+  //
+  // The request has to be held open to see it at all: the disabled state exists
+  // only for as long as the call is unanswered, and a resolved mock is already
+  // past it by the time an assertion could run.
+  it("will not take a second submit while the first is unanswered", async () => {
+    let releasePost: (response: AxiosResponse) => void = () => {};
+    vi.mocked(api.post).mockReturnValue(
+      new Promise<AxiosResponse>((resolve) => {
+        releasePost = resolve;
+      }),
+    );
+    renderForm();
+
+    fillForm();
+    submit();
+
+    // The label is part of the guard, not decoration — while the request is
+    // outstanding it is the only sign the click registered at all. Asking for
+    // the button by that name is therefore the assertion, not a lookup.
+    const button = await screen.findByRole("button", { name: "Creating…" });
+    expect(button).toBeDisabled();
+
+    // A click the browser would never deliver to a disabled button, so this
+    // only proves the state is real rather than re-testing the DOM.
+    fireEvent.click(button);
+    expect(api.post).toHaveBeenCalledOnce();
+
+    releasePost({ data: { user: {} } } as AxiosResponse);
+
+    // And it is a state, not a one-way latch: the button has to come back for
+    // the error paths above, where the dialog stays open to be corrected.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Create" })).toBeEnabled(),
+    );
+  });
+
   it("sends exactly name, email and password, with the email lowercased", async () => {
     succeeds();
     renderForm();

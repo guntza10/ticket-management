@@ -300,15 +300,19 @@ testing without HTTP shows up.
   the browser and call the server directly, covering `/api/users` on both verbs: who may
   read and who may create, the field allow-list on each answer, and what a create
   refuses. Every run migrates, truncates and re-seeds itself.
-- ✅ **Component tests** — Vitest + Testing Library, **20 specs**. `UsersPage` covers all
+- ✅ **Component tests** — Vitest + Testing Library, **24 specs**. `UsersPage` covers all
   four render states (loading, rows, empty, error), `ProtectedRoute` all four branches
   (loading, signed out, wrong role, allowed), `CreateUserForm` its validation, its
-  payload, both failure messages, the invalidation, and that it waits for the refetch
-  before reporting success, and `NavBar` what happens when the server refuses a sign-out
-  (including a refusal that carries no message to quote).
+  payload, both failure messages, the invalidation, that it waits for the refetch
+  before reporting success, and that the submit button will not take a second click
+  while the first is unanswered, `CreateUserDialog` that each open mounts a blank form
+  so neither an abandoned draft nor a stale error can reappear, and `NavBar` what
+  happens when the server refuses a sign-out (including a refusal that carries no
+  message to quote).
   Several of those states are ones E2E cannot stage: the server will not return an empty
-  roster, fail on request, or reject a sign-out on demand, and the loading states are
-  gone before an assertion can land on them.
+  roster, fail on request, or reject a sign-out on demand, the loading states are
+  gone before an assertion can land on them, and a request can only be held unanswered
+  where the client is the one answering it.
 - ⏭️ **Next** — the rest of Phase 3 (create / edit / delete a user), then the tickets domain (schema + API + UI).
 
 ## Known gaps — deliberately deferred
@@ -325,4 +329,4 @@ is what will make it start hurting; revisit when you hit it.
 | **No "return to intended page" after sign-in.** A signed-out visit to `/users` lands on `/` after login, not `/users`. | Deep links being shared, or any flow that sends users to a specific page. | Have `ProtectedRoute` record the attempted path and `LoginPage` honour it. |
 | **Form fields carry no `aria-describedby`,** so a validation message is announced when it appears (`FieldError` is `role="alert"`) but is not read out when the field is focused again — a screen reader hears "invalid" with no reason. Every documented shadcn `Field` example omits it too; the retired `form.tsx` was the only thing that ever wired it. | An accessibility pass, or the third or fourth form — at which point the wiring is worth centralising. | Give `FieldError` an `id` and point the control's `aria-describedby` at it (unconditionally: `FieldError` renders nothing when empty, and a dangling reference is ignored). A shared wrapper to derive those ids was built and reverted once already — if it comes back, it should come back because several forms need it, not to satisfy a line-count rule. |
 | **`CardTitle` renders a `div`, not a heading.** Screen readers find no page headings; specs assert body copy instead of `getByRole("heading")`. | Any accessibility pass. | Render page titles as real headings, then switch those assertions over. |
-| **The suite is top-heavy** — 59 specs at the E2E layer (17 of them API-level), 20 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |
+| **The suite is top-heavy** — 59 specs at the E2E layer (17 of them API-level), 24 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |
