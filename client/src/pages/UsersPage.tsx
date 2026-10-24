@@ -1,5 +1,6 @@
 import { useUsers } from "@/features/users/api/get-users";
 import CreateUserDialog from "@/features/users/components/CreateUserDialog";
+import EditUserDialog from "@/features/users/components/EditUserDialog";
 import NavBar from "@/components/NavBar";
 import {
   Card,
@@ -61,6 +62,10 @@ export default function UsersPage() {
                     <TableHead>Email</TableHead>
                     <TableHead>Role</TableHead>
                     <TableHead>Created</TableHead>
+                    {/* The actions column has no label: a heading for a column
+                        of icon buttons reads out before every row and says
+                        nothing the buttons' own names do not. */}
+                    <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -81,13 +86,16 @@ export default function UsersPage() {
                         <TableCell>
                           <Skeleton className="h-4 w-20" />
                         </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-8 w-8" />
+                        </TableCell>
                       </TableRow>
                     ))}
                   {/* colSpan must match the header count above — a new column
                       added there has to be counted here too. */}
                   {users?.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-muted-foreground">
+                      <TableCell colSpan={5} className="text-muted-foreground">
                         No users found.
                       </TableCell>
                     </TableRow>
@@ -99,6 +107,12 @@ export default function UsersPage() {
                       <TableCell>{user.role}</TableCell>
                       <TableCell>
                         {new Date(user.createdAt).toLocaleDateString()}
+                      </TableCell>
+                      {/* The whole row is handed over, though the dialog only
+                          reads id, name and email — passing three props would
+                          have to be kept in step with the form by hand. */}
+                      <TableCell className="text-right">
+                        <EditUserDialog user={user} />
                       </TableCell>
                     </TableRow>
                   ))}
