@@ -24,6 +24,9 @@
       "warn",
       { "max": 100, "skipComments": true, "skipBlankLines": true }
     ],
-    "max-lines": ["warn", { "max": 300 }]
+    "max-lines": [
+      "warn",
+      { "max": 300, "skipComments": true, "skipBlankLines": true }
+    ]
   }
 }

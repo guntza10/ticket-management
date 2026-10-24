@@ -6,13 +6,11 @@ import {
   CLIENT_ORIGIN,
   signInViaApi,
 } from "./support/auth";
-import { NEW_USER_PASSWORD, newUserEmail } from "./support/users";
-
-// Exactly the fields `GET /api/users` selects. Asserting the key set — not just
-// that the expected values are present — is what turns this into a test of the
-// allow-list: a bare findMany would ship every column the table happens to
-// have, including whatever the next migration adds.
-const ALLOWED_FIELDS = ["createdAt", "email", "id", "name", "role"];
+import {
+  ALLOWED_FIELDS,
+  NEW_USER_PASSWORD,
+  newUserEmail,
+} from "./support/users";
 
 test.describe("Users API — authorization", () => {
   test("GET /api/users is 401 without a session", async ({ request }) => {
