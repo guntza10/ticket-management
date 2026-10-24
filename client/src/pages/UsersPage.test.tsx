@@ -4,7 +4,8 @@ import type { AxiosResponse } from "axios";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "@/lib/api";
-import UsersPage, { type UserRow } from "@/pages/UsersPage";
+import type { UserRow } from "@/features/users/api/get-users";
+import UsersPage from "@/pages/UsersPage";
 
 // UsersPage reaches the server through this module, so a fake takes its place:
 // the test, not a running API, decides what comes back. That is what buys the

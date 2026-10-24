@@ -1,8 +1,6 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { api } from "@/lib/api";
 import PasswordInput from "@/components/PasswordInput";
 import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
@@ -13,6 +11,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { useCreateUser } from "../api/create-user";
 import {
   createUserSchema,
   type CreateUserInput,
@@ -21,30 +20,6 @@ import {
 // Validating here is not the security boundary — it only saves a round-trip.
 // The server parses the same schema from the same file, because anything
 // reachable by fetch is reachable by curl.
-
-// The write and the cache it has to refresh, named as one thing: at the call
-// site this reads as `useCreateUser()` instead of a queryClient, a useMutation
-// and a cache key threaded through the markup. The repo's first useMutation.
-// The response body is ignored on purpose: the table reads from the ["users"]
-// query, so there is nothing to write into the cache by hand and no reason to
-// couple this form to the row type.
-//
-// It stays in this file while it is the only one. The day edit and delete
-// arrive they will each need the same ["users"] key from their own component,
-// and a hook pinned to the bottom of this one cannot be shared — that is the
-// point to lift all three into a module of their own, not before.
-function useCreateUser() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (user: CreateUserInput) => api.post("/api/users", user),
-    // Returned, not fired and forgotten. mutateAsync then settles only once the
-    // roster has actually refetched, so the dialog closes onto a table that
-    // already holds the new row instead of racing it.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
-  });
-}
-
 export default function CreateUserForm({
   onCreated,
 }: {

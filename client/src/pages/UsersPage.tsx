@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useUsers } from "@/features/users/api/get-users";
 import CreateUserDialog from "@/features/users/components/CreateUserDialog";
 import NavBar from "@/components/NavBar";
 import {
@@ -17,38 +17,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api } from "@/lib/api";
 
-// Mirrors the `select` in GET /api/users. createdAt is a string, not a Date:
-// JSON has no date type, so Prisma's DateTime arrives here as an ISO string.
-export type UserRow = {
-  id: string;
-  name: string;
-  email: string;
-  role: "agent" | "admin";
-  createdAt: string;
-};
-
-// No status check and no try/catch: axios rejects on 4xx/5xx, and React Query
-// turns that rejection into the `error` below. The signal comes from React
-// Query, which aborts it when the component unmounts or the query is replaced —
-// the job the hand-rolled AbortController used to do.
-async function getUsers(signal: AbortSignal): Promise<UserRow[]> {
-  const { data } = await api.get<{ users: UserRow[] }>("/api/users", { signal });
-  return data.users;
-}
-
+// The page renders the roster; it does not define how the roster is fetched.
+// The request, its row type and the cache key it reads under all live in
+// features/users/api/, next to the two mutations that invalidate that same
+// key — naming a different one there is the silent failure this arrangement
+// is for.
 export default function UsersPage() {
-  // queryKey is the cache's identity, not a label: anything that refetches or
-  // invalidates this list — creating a user in Phase 3, say — names ["users"].
-  const {
-    data: users,
-    isPending,
-    error,
-  } = useQuery({
-    queryKey: ["users"],
-    queryFn: ({ signal }) => getUsers(signal),
-  });
+  const { data: users, isPending, error } = useUsers();
 
   return (
     <div className="min-h-screen bg-muted">
