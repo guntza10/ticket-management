@@ -29,12 +29,13 @@ Legend: 🔴 must-have · 🟡 important · 🟢 later
 
 ## Phase 3 — User Management 🔴
 
-- [ ] Create user management page (admin only) — *list + create shipped; edit and
-      delete controls are still missing*
+- [ ] Create user management page (admin only) — *list, create and edit shipped;
+      the delete control is still missing*
 - [x] Implement create agent API endpoint — `POST /api/users`, admin-only, role forced
       to `agent` server-side
 - [x] Implement list users API endpoint
-- [ ] Implement edit user API endpoint
+- [x] Implement edit user API endpoint — `PATCH /api/users/:id`, admin-only, a
+      blank password leaves the existing one alone
 - [ ] Implement delete user API endpoint
 - [x] Add role-based access control (admin vs agent) — `requireAdmin` (403);
       apply it to each new endpoint as it lands

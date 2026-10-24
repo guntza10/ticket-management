@@ -48,6 +48,16 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     **layout/sizing** classes (`w-full`, `max-w-sm`, positioning). Use `variant`/`size`
     for looks — not custom color/border/padding overrides.
   - Signal field errors with `aria-invalid` (built-in destructive styling), not custom CSS.
+  - **An icon-only button needs an `aria-label`,** and make it name the thing it acts
+    on: `aria-label={`Edit ${user.name}`}`, not `"Edit"`. Without one the accessible
+    name is empty and neither a screen reader nor a test can tell one row's button from
+    another's. `PasswordInput`'s toggle is the same shape.
+    Two consequences worth knowing before writing a locator: the label becomes part of
+    the **cell's** accessible name, so Playwright's
+    `getByRole("cell", { name: "Some Name" })` also matches the actions cell reading
+    `Edit Some Name` — pass `exact: true`. And `Edit Probe` is a substring of
+    `Edit Probe Edited`, so the triggers need it too. Testing Library matches a whole
+    string and is unaffected.
   - **Forms are built from `field`, not `form`.** shadcn replaced the old
     `Form`/`FormField`/`FormItem`/`FormMessage` wrapper with **`Field`** in October 2025.
     In this project's `radix-nova` style `/r/styles/radix-nova/form.json` carries no
@@ -84,8 +94,11 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - **Always pass `defaultValues` to `useForm`.** react-hook-form recommends it for the
   form as a whole, and these inputs are uncontrolled so they would read `""` off the DOM
   without it — but `isDirty`, `watch` and `reset` all compare against that object, so a
-  form without it quietly cannot answer "has anything changed?". The edit-user form will
-  want exactly that.
+  form without it quietly cannot answer "has anything changed?". `EditUserForm` is where
+  that stopped being theoretical: its `defaultValues` **are** the prefill, and its Save
+  button is `disabled={isSubmitting || !isDirty}`, so the same object does both jobs.
+  Drop it there and every freshly opened form counts as changed, inviting a write that
+  stores the row exactly as it already was.
 - **One field = `Field` + `FieldLabel` + the control + `FieldError`, inside a
   `FieldGroup`.** Written out per field, exactly the way shadcn's own Field docs write
   it, and **deliberately not wrapped in a shared field component.** A wrapper was built
@@ -126,6 +139,15 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   every open starts blank with no `reset()` to remember, and yesterday's error cannot
   reappear. Keep `open` on the Root (success has to close it from inside); a
   `DialogTrigger` inside a controlled Root still works — it just calls `onOpenChange`.
+  For an **edit** dialog the same unmount does more than start blank: the form's
+  `defaultValues` are read on mount, so every open re-reads the row as it is *then*. A
+  `useForm` that outlived a close would keep showing the row from before the last
+  refetch and offer to save it back. `EditUserDialog.test.tsx` holds that down by
+  opening, abandoning an edit, reopening, and by re-rendering with a changed `user`.
+  One dialog is rendered **per row**, each holding its own `open` — the alternative, one
+  dialog plus a "which row is being edited" state, needs the row remembered above the
+  table and a null check at every read of it. Only the trigger button is mounted per
+  row; Radix renders `DialogContent` only while open.
   `CreateUserDialog` + `CreateUserForm` are the pattern, and `CreateUserDialog.test.tsx`
   is what holds it in place: it opens, types, closes, reopens, and asserts both the draft
   and a 409's message are gone. Nothing else catches a regression here —
@@ -148,9 +170,15 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   invalidate after a mutation. Background: `_resources/knowledge/axios.md` and
   `tanstack-query.md`.
 - **Writes: `useMutation`, and invalidate the key the list reads.** The call lives in a
-  named hook next to the component (`useCreateUser` in `CreateUserForm.tsx`) so the
-  write and the cache it refreshes sit together, away from the markup; edit and delete
-  get siblings of it. It posts, then `onSuccess` **returns**
+  named hook, one per endpoint, in `features/<domain>/api/` — `useCreateUser` in
+  `api/create-user.ts`, `useUpdateUser` in `api/update-user.ts`, `useUsers` in
+  `api/get-users.ts` — so the write and the cache it refreshes sit together and the
+  component is left holding markup. `DELETE` gets `api/delete-user.ts` beside them.
+  They stay **separate hooks, not one `useSaveUser` that branches**: create and edit
+  take different payload types, because a create must carry a password and an edit must
+  be able to leave it out, and one input type loose enough for both would throw away the
+  guarantee the create path depends on (measured: merging them makes the create call
+  need a cast or a second `parse`). It posts, then `onSuccess` **returns**
   `queryClient.invalidateQueries({ queryKey: ["users"] })` — returning it makes
   `mutateAsync` settle only after the roster has
   refetched, so the dialog closes onto a table that already holds the new row instead of
@@ -159,6 +187,30 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   in `CreateUserForm.test.tsx`, which holds the refetch open and asserts the form has not
   reported success yet — nothing else catches it, because every other assertion sees both
   calls happen whichever order they run in.
+- **There is no state-management library here, and that is a decision.** Split state in
+  two before reaching for one:
+  - **Server state** — the real copy lives in the database and someone else can change
+    it without telling us (the roster, later the tickets). It goes stale, so it needs
+    caching, refetching and loading/error states. **TanStack Query is that manager, and
+    we already use it.** Its own docs put it plainly: *"For a vast majority of
+    applications, the truly globally accessible client state that is left over after
+    migrating all of your async code to TanStack Query is usually very tiny."*
+  - **Client state** — exists only in this browser tab. Redux / Zustand / Jotai manage
+    *this*, not the above. Ours today: each dialog's `open`, and what react-hook-form
+    holds while a form is on screen. Nothing that has to travel.
+  - **The ladder, stop at the first yes:** server state → TanStack Query · used in one
+    place → `useState` · crosses one or two layers that all use it → props (where
+    `EditUserDialog` sits) · crosses layers that *don't* use it → restructure with
+    `children` · several unrelated components need it → **Context** · Context now hurts
+    → **a store**. Note the last step: "shared in many places" argues for Context, not
+    for a store. A store needs a second reason — re-renders that need selectors, update
+    logic worth keeping in one place, reads from outside React, or devtools.
+  - **The one coming soon is ticket filters, and the answer there is probably not a
+    store either.** Status / category / assignee / search / page belong in the URL
+    (`useSearchParams`), because a filtered list should survive a refresh, work with the
+    back button, and be shareable as a link. A store does none of those.
+  - **Never park server data in a store.** That is a second cache beside the one
+    TanStack Query already keeps, and then nothing says which of the two is right.
 - **Server errors from a mutation go through `setError`, not a second dialog.** A 409
   becomes `setError("email", …, { shouldFocus: true })`: it lands in the field-error
   markup that already exists, lights `aria-invalid` for free, moves the cursor to the
@@ -215,10 +267,15 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 
 - `src/pages/` — route pages (`LoginPage`, `HomePage`, `UsersPage`)
 - `src/features/<domain>/` — everything that only one domain uses, e.g.
-  `features/users/components/` (`CreateUserDialog`, `CreateUserForm`)
+  `features/users/components/` (`CreateUserDialog`, `CreateUserForm`,
+  `EditUserDialog`, `EditUserForm`)
 - `src/components/` — components **two or more** features or pages use
   (`NavBar`, `ProtectedRoute`, `ErrorDialog`, `PasswordInput`);
   `src/components/ui/` — shadcn (generated)
+- `src/features/<domain>/api/` — one file per endpoint, each exporting the hook the
+  components call: `get-users.ts` (`useUsers` + the `UserRow` type the response has),
+  `create-user.ts`, `update-user.ts`, and `query-key.ts` holding the `USERS_QUERY_KEY`
+  all three name
 - `src/lib/` — `auth-client.ts`, `api.ts` (`API_URL` + the `api` axios instance)
 - `src/test/` — test support, not tests: `setup.ts` (jest-dom matchers + per-test
   cleanup) and `axios-error.ts` (`axiosErrorWithStatus`, the rejection shape the app's
@@ -257,9 +314,20 @@ components/ lib/ test/  →  nothing above them
   leaves it silently unguarded. Note that this cuts against the reasoning that retired
   `FormField` (match the documented shape) — the difference is that a missing lint zone
   cannot be noticed by reading the code, and a wrongly-spelled import can.
-- **`features/<domain>/api/`, `hooks/`, `types/` are not created until something goes in
-  them.** `useCreateUser` is still inside `CreateUserForm.tsx` on purpose; it moves to
-  `features/users/api/` when `PATCH` and `DELETE` need the same `["users"]` key.
+- **`features/<domain>/api/` holds the server calls; `hooks/`, `types/`, `stores/` are
+  still not created until something goes in them.** `api/` was created on 2026-10-23, by
+  decision, once `PATCH` made it three endpoints — `get-users.ts`, `create-user.ts`,
+  `update-user.ts` plus the shared `query-key.ts`. The shape is bulletproof-react's:
+  one file per endpoint, named for it.
+  Worth being precise about *why*, because it is not the "second caller" rule — each
+  hook still has exactly one caller. It is the other rule, from **Folder structure** in
+  the root [`../CLAUDE.md`](../CLAUDE.md): where a file *lives* is the cheap half of a
+  convention, so there is little to win by guessing early and little to lose by moving
+  late. What actually forced it was `UserRow`, which described the feature's data from
+  inside `pages/UsersPage.tsx` — a feature may not import from `pages/`, so the edit
+  form had to restate the three fields it needed. With the type in `api/get-users.ts`
+  that becomes `Pick<UserRow, "id" | "name" | "email">`, and the roster's shape reaches
+  the form instead of drifting past it.
 - **The direction is a hard gate, not a guideline.** `.oxlintrc.json` has two
   `overrides` zones running `no-restricted-imports`: one stops `src/features/**` from
   importing another feature or a page, the other stops `src/components/**`, `src/lib/**`

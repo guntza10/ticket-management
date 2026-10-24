@@ -18,17 +18,26 @@ Current specs:
 - `users-api.spec.ts` — `/api/users` without a browser: who may read the roster and
   who may create, the field allow-list on both answers, and what a create refuses
   (duplicate address, short password, malformed email)
+- `users-api-edit.spec.ts` — `PATCH /api/users/:id` without a browser: who may edit,
+  the allow-list it answers with, what a password-less body leaves alone, and what an
+  edit refuses. Split out of `users-api.spec.ts` because one file covering three verbs
+  went past 300 lines of code
 - `create-user.spec.ts` — the admin creates an agent through the dialog, the row
   appears without a reload, a taken address reports inline, and the new account can
   really sign in
+- `edit-user.spec.ts` — the pencil opens the dialog for the row it sits in, a rename
+  reaches the table without a reload, Save waits for a real change, and a taken address
+  reports inline in the dialog that stays open
 
 The `trustedOrigins` tests only work because `server/src/auth.ts` sets
 `advanced: { disableOriginCheck: false }`. Better Auth otherwise defaults that check
 off when `NODE_ENV=test` — exactly what the E2E run sets — which would leave the gate
 silently absent and untestable. Don't remove that line.
 
-`support/auth.ts` holds the seeded credentials and the shared login locators, and
-`support/users.ts` the helper that names a row a spec is about to create. Neither is a
+`support/auth.ts` holds the seeded credentials and the shared login locators;
+`support/users.ts` names a row a spec is about to create (`newUserEmail`), creates one
+over HTTP (`createUserViaApi`), and holds `ALLOWED_FIELDS`, the key set both
+`users-api.spec.ts` and `users-api-edit.spec.ts` assert on. Neither is a
 spec, so Playwright does not collect them.
 
 `global-setup.ts` migrates, truncates, then re-seeds `ticket_management_test` before

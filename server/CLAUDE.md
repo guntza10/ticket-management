@@ -101,6 +101,11 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
   An account is a `user` row *plus* a credential `account` row, and the two have to
   agree on
   `providerId: "credential"`, on `accountId` being the user's own id, and on the hasher.
+  **That provider id is an exported const, `CREDENTIAL_PROVIDER_ID`**, since
+  2026-10-23: it was a literal while this file was its only writer, but `update-user.ts`
+  now *reads* account rows by it, and a reader and a writer disagreeing on that string
+  does not throw — the filter matches nothing, `updateMany` answers `count: 0`, and a
+  perfectly healthy row answers 500.
   Get any of those wrong and the account is created successfully and can simply never
   sign in — a failure with no error attached. One function means the seed and the
   endpoint cannot drift into that quietly.
@@ -131,11 +136,48 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
   imported by relative path, so the restriction never applies. See the root
   `CLAUDE.md` → **Shared code (`core/`)** for the wiring that keeps it honest.
 
+## Editing accounts
+
+- **`PATCH /api/users/:id` takes the whole editable profile.** `name` and `email` are
+  required, `password` is the only optional field. That is what the form sends, because
+  the form is prefilled with the row and therefore always has both. The verb is still
+  `PATCH` rather than `PUT` because the body never describes the whole resource: `role`
+  and `id` are not editable here and no body can set them.
+- **A blank password means "leave it alone", and that has to travel as an absent
+  field.** `updateUserSchema` turns `""` into `undefined`, which `JSON.stringify` then
+  drops, so the body carries no `password` key at all. The reason is hashing: the server
+  hashes whatever it is given and a second hash of the same string is a different hash,
+  so "no change" cannot be expressed as "the same value sent again". A body carrying
+  `password: ""` would be a request to change the password *to* the empty string.
+  - The order inside that schema is load-bearing: `.transform()` first, then `.refine()`
+    for the 8-character rule. A `.min(8)` written in front of the transform sees the raw
+    `""` and rejects the blank field — the exact opposite of the intent.
+    `users-api-edit.spec.ts` pins both halves: a blank body succeeds and leaves the old
+    password working, a 7-character one is a 400.
+- **`src/users/update-user.ts` owns the write**, and it is not a mirror of
+  `create-user.ts`: the two rows are not written together, because the profile always
+  changes and the password usually does not. The hash is computed **outside** the
+  transaction — Argon2 is deliberately slow and nothing in the transaction depends on
+  it, so hashing inside would hold a connection and the row's lock open for no reason.
+- **The credential row is updated with `updateMany`, and the count is checked.**
+  `account` has no unique index on `(userId, providerId)`, so `update` cannot find the
+  row by that pair. `updateMany` then answers `0` instead of throwing when nothing
+  matched — so without the `count === 0` throw, a user with no credential account would
+  get a `200` saying the password was changed when nothing was written. Throwing rolls
+  the profile update back too, which is right: the caller asked for one change.
+- **Missing row: catch Prisma `P2025`, don't pre-check** — same reasoning as `P2002` for
+  a duplicate address. `user.update`'s `where` is the only one in the transaction, so
+  `P2025` cannot mean anything else there.
+- **Changing a password does not end that user's sessions.** Better Auth's sessions are
+  rows keyed by token, not by the password hash, so someone already signed in stays
+  signed in. Deliberate for now — see the Known gaps table in the root `CLAUDE.md`.
+
 ## Error handling
 
 - **Every error answers `{ error: "<snake_case_code>" }`.** In use: `unauthenticated`
-  (401), `forbidden` (403), `invalid_body` (400), `email_taken` (409), `internal_error`
-  (500). A client reads the code; the prose for a person is the client's job.
+  (401), `forbidden` (403), `invalid_body` (400), `user_not_found` (404),
+  `email_taken` (409), `internal_error` (500). A client reads the code; the prose for
+  a person is the client's job.
 - **One error-handling middleware, last in `index.ts`** — four parameters
   (`err, req, res, next`); three and Express silently treats it as ordinary
   middleware that never runs.
@@ -189,8 +231,9 @@ production; `.env.test` sets `NODE_ENV=test` so E2E runs don't hit 429s.
 ## Structure
 
 - `src/index.ts` — Express app wiring: middleware, mounts, error handler, `listen`
-- `src/users/` — the `/api/users` module: `users.routes.ts` (the router) and
-  `create-user.ts` (the schema + the row-writing function shared with `prisma/seed.ts`)
+- `src/users/` — the `/api/users` module: `users.routes.ts` (the router),
+  `create-user.ts` (the field allow-list + the row-writing function shared with
+  `prisma/seed.ts`) and `update-user.ts` (the profile/password write behind `PATCH`)
 - `src/auth.ts` — better-auth config · `src/require-auth.ts` — session guard
   · `src/require-admin.ts` — role guard
 - `src/db.ts` — Prisma client · `prisma/` — schema, migrations, `seed.ts`

@@ -161,9 +161,18 @@ a suite as passing without having run it; "should pass" is not a result.
 
 ## Shared code (`core/`)
 
-One definition, imported by both sides — `core/schemas/users.ts` is read by
-`server/src/users/users.routes.ts`, `server/prisma/seed.ts` and
-`client/src/features/users/components/CreateUserForm.tsx`. Put anything here
+One definition, imported by both sides — `core/schemas/users.ts` holds
+`createUserSchema` and `updateUserSchema`, read by
+`server/src/users/users.routes.ts`, `server/prisma/seed.ts`,
+`client/src/features/users/components/CreateUserForm.tsx` and
+`EditUserForm.tsx`. `updateUserSchema` is built with `.extend` off
+`createUserSchema` rather than restated, so the rules the two share cannot
+drift between creating and editing. The one rule `.extend` cannot share —
+password, because editing lets it be absent — is held together instead by
+`PASSWORD_MIN_LENGTH` and `PASSWORD_TOO_SHORT`, two consts at the top of the
+file: `createUserSchema` states the rule with `.min()`, `updateUserSchema`
+restates it inside a `.refine()`, and without those consts the number and the
+prose would sit twice inside the one file whose job is to stop exactly that. Put anything here
 that **both** workspaces must agree on; a rule that only one side enforces does
 not belong in it.
 
@@ -229,11 +238,16 @@ that does three things at 60 is not. Work down this list, and stop at the first 
 - **`CreateUserDialog` + `CreateUserForm` — kept**, on question 2 and a technical
   requirement: Radix unmounts `DialogContent` on close, so the `useForm` call living in
   the child is what makes every open start blank.
-- **`useCreateUser` — kept in `CreateUserForm.tsx`, not yet its own module.** It passes
-  question 2 and fails question 1 while it is the only one. When `PATCH` and `DELETE`
-  land, three hooks will need the same `["users"]` key from three components, and *that*
-  is the moment they move out together — the extraction follows the second caller, not
-  the other way round.
+- **`useCreateUser` and `useUpdateUser` — moved into `features/users/api/`**
+  (2026-10-23), and the reason matters more than the move. It was **not** question 1:
+  each hook still has exactly one caller, and *a second near-identical hook is not a
+  second caller*. It was the **Folder structure** rule below — where a file lives is the
+  cheap half — plus one thing that was genuinely stuck: `UserRow` described the users
+  feature's data from inside `pages/UsersPage.tsx`, and a feature may not import from
+  `pages/`, so `EditUserForm` had to restate the fields it needed. Moving the row type
+  into `api/get-users.ts` is what let it become `Pick<UserRow, …>`; the two hooks came
+  along because splitting their folder from the type's would have been the worse half of
+  a move. They stay **two hooks, not one that branches** — see `client/CLAUDE.md`.
 
 ### Folder structure: adopt the rule, not the empty folders
 
@@ -264,8 +278,9 @@ three-layer direction rule, enforced in `client/.oxlintrc.json` — see **Where 
 file goes** in [`client/CLAUDE.md`](client/CLAUDE.md). Deliberately *not* adopted:
 `src/app/routes/` (`pages/` already holds routes, and bulletproof itself says that layer
 depends on the meta-framework — React Router declarative mode has no such layer),
-renaming `src/test/` to `testing/`, and pre-creating `api/` · `hooks/` · `types/` inside
-a feature. **Server keeps `src/<domain>/` by domain** — Express prescribes no structure
+renaming `src/test/` to `testing/`, and pre-creating a feature's sub-folders before
+anything goes in them — `api/` was added on 2026-10-23 because three endpoints and a
+row type needed a home, while `hooks/` · `types/` · `stores/` still do not exist. **Server keeps `src/<domain>/` by domain** — Express prescribes no structure
 at all — and grows a service or repository file only when a second caller or a rule worth
 testing without HTTP shows up.
 
@@ -292,28 +307,42 @@ testing without HTTP shows up.
   function `prisma/seed.ts` now uses, because a disagreement about `providerId` or the
   hasher produces an account that is created successfully and can never sign in. The
   role is forced to `agent` server-side and the address is lowercased, since
-  `/sign-in/email` looks a user up by `email.toLowerCase()`. Edit / delete are still
-  open (Phase 3).
+  `/sign-in/email` looks a user up by `email.toLowerCase()`. Delete is still open
+  (Phase 3).
+- ✅ **Edit user** — `PATCH /api/users/:id` (admin-only) behind a pencil button on each
+  row of `/users`, opening a dialog prefilled with that row. **A blank password field
+  means "leave the password alone"**, and it has to travel as an *absent* JSON field:
+  the server hashes whatever it is sent, so a second hash of the same string is a
+  different hash and "no change" cannot be "the same value resent".
+  `updateUserSchema` turns `""` into `undefined` and `JSON.stringify` drops it. Role
+  stays uneditable — no endpoint reads a role from a body — and Save is disabled until
+  something differs from the row.
 - ✅ **E2E** — Playwright against a dedicated `ticket_management_test` DB and test ports;
-  **59 specs** — the auth system end to end (sign-in, validation, route protection,
-  session lifecycle, cookie/CORS/CSRF properties) plus **17 API-level specs** that skip
-  the browser and call the server directly, covering `/api/users` on both verbs: who may
-  read and who may create, the field allow-list on each answer, and what a create
-  refuses. Every run migrates, truncates and re-seeds itself.
-- ✅ **Component tests** — Vitest + Testing Library, **24 specs**. `UsersPage` covers all
+  **75 specs** — the auth system end to end (sign-in, validation, route protection,
+  session lifecycle, cookie/CORS/CSRF properties) plus **29 API-level specs** that skip
+  the browser and call the server directly, covering `/api/users` on all three verbs:
+  who may read, create and edit, the field allow-list on every answer, what a create
+  refuses, and — the one thing only a real sign-in can settle — that an edit carrying no
+  password leaves the old one working while an edit carrying one replaces it. Every run
+  migrates, truncates and re-seeds itself.
+- ✅ **Component tests** — Vitest + Testing Library, **37 specs**. `UsersPage` covers all
   four render states (loading, rows, empty, error), `ProtectedRoute` all four branches
   (loading, signed out, wrong role, allowed), `CreateUserForm` its validation, its
   payload, both failure messages, the invalidation, that it waits for the refetch
   before reporting success, and that the submit button will not take a second click
   while the first is unanswered, `CreateUserDialog` that each open mounts a blank form
-  so neither an abandoned draft nor a stale error can reappear, and `NavBar` what
-  happens when the server refuses a sign-out (including a refusal that carries no
-  message to quote).
+  so neither an abandoned draft nor a stale error can reappear, `EditUserForm` the
+  prefill, the Save button staying disabled until something differs from the row, both
+  failure messages, the invalidation, and — the feature's central rule — that a blank
+  password field produces a request body with **no `password` key at all** while a typed
+  one sends it, `EditUserDialog` that each open re-reads the row rather than reviving an
+  abandoned edit, and `NavBar` what happens when the server refuses a sign-out
+  (including a refusal that carries no message to quote).
   Several of those states are ones E2E cannot stage: the server will not return an empty
   roster, fail on request, or reject a sign-out on demand, the loading states are
   gone before an assertion can land on them, and a request can only be held unanswered
   where the client is the one answering it.
-- ⏭️ **Next** — the rest of Phase 3 (create / edit / delete a user), then the tickets domain (schema + API + UI).
+- ⏭️ **Next** — the rest of Phase 3 (delete a user), then the tickets domain (schema + API + UI).
 
 ## Known gaps — deliberately deferred
 
@@ -328,5 +357,6 @@ is what will make it start hurting; revisit when you hit it.
 | **No catch-all route.** `App.tsx` has `/login`, `/`, `/users` and nothing else, so an unknown URL renders a blank page. | Anyone mistyping a URL; more so once there are more routes. | Add a `*` route with a 404 page, then a spec for it. |
 | **No "return to intended page" after sign-in.** A signed-out visit to `/users` lands on `/` after login, not `/users`. | Deep links being shared, or any flow that sends users to a specific page. | Have `ProtectedRoute` record the attempted path and `LoginPage` honour it. |
 | **Form fields carry no `aria-describedby`,** so a validation message is announced when it appears (`FieldError` is `role="alert"`) but is not read out when the field is focused again — a screen reader hears "invalid" with no reason. Every documented shadcn `Field` example omits it too; the retired `form.tsx` was the only thing that ever wired it. | An accessibility pass, or the third or fourth form — at which point the wiring is worth centralising. | Give `FieldError` an `id` and point the control's `aria-describedby` at it (unconditionally: `FieldError` renders nothing when empty, and a dangling reference is ignored). A shared wrapper to derive those ids was built and reverted once already — if it comes back, it should come back because several forms need it, not to satisfy a line-count rule. |
+| **Changing a password does not end that user's sessions.** Better Auth's sessions are rows keyed by token, not by the password hash, so an admin resetting an agent's password leaves anyone already signed in as that agent signed in. | Any sign a password is being reset *because* an account is compromised — or a "sign out everywhere" button, which is the same mechanism. | Delete that user's `session` rows in the same transaction as the password write in `server/src/users/update-user.ts`, and add an API spec that proves the old cookie stops working. Decided against for now (2026-10-23): it is a second concern inside an edit form, and the honest version needs a way to tell "reset because compromised" from "reset because forgotten". |
 | **`CardTitle` renders a `div`, not a heading.** Screen readers find no page headings; specs assert body copy instead of `getByRole("heading")`. | Any accessibility pass. | Render page titles as real headings, then switch those assertions over. |
-| **The suite is top-heavy** — 59 specs at the E2E layer (17 of them API-level), 24 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |
+| **The suite is top-heavy** — 75 specs at the E2E layer (29 of them API-level), 37 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |
