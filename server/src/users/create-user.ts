@@ -9,6 +9,12 @@ import { auth } from "../auth.ts";
 // while GET wrote its own copy two files away, which read as a problem already
 // solved. `e2e/users-api.spec.ts` asserts this exact key set on every row of
 // both answers, so it is still checked from the outside as well.
+// What Better Auth calls an email+password account, as opposed to a social one.
+// It was a literal in one place until update-user.ts started *reading* rows by
+// it, and a reader and a writer disagreeing on this string is the exact failure
+// server/CLAUDE.md warns about: nothing throws, the row simply is not found.
+export const CREDENTIAL_PROVIDER_ID = "credential";
+
 export const PUBLIC_USER_FIELDS = {
   id: true,
   name: true,
@@ -64,7 +70,7 @@ export async function createUserWithPassword(
         // A credential account's accountId is the user's own id — this is the
         // row shape Better Auth's own sign-up writes.
         accountId: userId,
-        providerId: "credential",
+        providerId: CREDENTIAL_PROVIDER_ID,
         password,
       },
     });

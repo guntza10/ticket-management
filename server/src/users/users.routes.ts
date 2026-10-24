@@ -3,11 +3,15 @@ import prisma from "../db.ts";
 import { Prisma } from "../generated/prisma/client.ts";
 import { requireAuth } from "../require-auth.ts";
 import { requireAdmin } from "../require-admin.ts";
-import { createUserSchema } from "../../../core/schemas/users.ts";
+import {
+  createUserSchema,
+  updateUserSchema,
+} from "../../../core/schemas/users.ts";
 import {
   createUserWithPassword,
   PUBLIC_USER_FIELDS,
 } from "./create-user.ts";
+import { updateUser } from "./update-user.ts";
 
 // Mounted at /api/users by index.ts, so every path below is relative to that.
 // Keeping the prefix at the mount point means it is written once and a rename
@@ -15,9 +19,10 @@ import {
 const router = Router();
 
 // Both guards once, for the whole router, rather than repeated on each route.
-// Every route here is admin-only and the ones still to come (PATCH, DELETE)
-// will be too — and the mistake that actually ships is a new route added
-// without them, not a route that needed to opt out. Order still matters:
+// Every route here is admin-only and DELETE will be too — and the mistake that
+// actually ships is a new route added without them, not a route that needed to
+// opt out. PATCH below inherits them without saying so, which is the point.
+// Order still matters:
 // requireAdmin reads the session requireAuth puts on res.locals.
 router.use(requireAuth, requireAdmin);
 
@@ -73,6 +78,44 @@ router.post("/", async (req, res) => {
       return;
     }
     // Not ours to interpret. Re-throw, or we swallow bugs as 409s.
+    throw err;
+  }
+});
+
+// The id comes from the path, never from the body — a body that also carried an
+// id would give one request two answers to "which user", and zod strips the key
+// so the path is the only one that exists.
+router.patch("/:id", async (req, res) => {
+  const parsed = updateUserSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+
+  try {
+    // parsed.data carries no `password` key at all when the field was left
+    // blank; see updateUserSchema for why "no change" has to be an absent
+    // field rather than the same value sent again.
+    const user = await updateUser(req.params.id, parsed.data);
+    res.json({ user });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+      // No row with that id. user.update is the only call in the transaction
+      // that can raise P2025 — the account write beside it is an updateMany,
+      // which answers `count: 0` instead of throwing (see update-user.ts) — so
+      // this cannot mean anything else.
+      if (err.code === "P2025") {
+        res.status(404).json({ error: "user_not_found" });
+        return;
+      }
+      // user.email again, same as POST: the new address is someone else's.
+      if (err.code === "P2002") {
+        res.status(409).json({ error: "email_taken" });
+        return;
+      }
+    }
+    // Including the "no credential account" error updateUser throws — that is a
+    // broken row, not a request to answer, so it belongs in the 500 handler.
     throw err;
   }
 });
