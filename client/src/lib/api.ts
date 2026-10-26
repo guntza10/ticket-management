@@ -16,3 +16,43 @@ export const api = axios.create({
   baseURL: API_URL,
   withCredentials: true,
 });
+
+// A session that is gone — expired, signed out in another tab, or belonging to
+// a user an admin has just deleted — answers 401 to everything. Without this,
+// the page stays on screen and every click produces an error with no
+// explanation, which reads as the app being broken rather than as being signed
+// out.
+//
+// Better Auth already handles the half it can see: its session store refetches
+// on window focus and nulls itself on a 401, so ProtectedRoute sends the
+// person to /login on the next reload or tab switch. What it cannot see is
+// *this* instance — calls to our own /api/users never pass through Better
+// Auth, so nothing there learns that the server refused one. That gap is the
+// only reason this exists.
+api.interceptors.response.use(undefined, (error: unknown) => {
+  // 401 only. An agent reaching an admin-only route gets 403, which has to
+  // reach the caller untouched — it means "signed in, not allowed", and
+  // redirecting to a login page would be the wrong answer to it.
+  //
+  // `error.response` rather than `error.status`: a request React Query aborts
+  // on unmount rejects with a CanceledError that carries no response at all.
+  const status =
+    axios.isAxiosError(error) && error.response ? error.response.status : null;
+
+  // Already there — the login page itself makes no calls through this instance
+  // today, but a future one would otherwise reload in a loop.
+  const elsewhere = window.location.pathname !== "/login";
+
+  if (status === 401 && elsewhere) {
+    // `replace`, so the back button does not return to a page that cannot
+    // load. No signOut() call: this module cannot import the auth client
+    // without a cycle — auth-client.ts reads API_URL from here, and ES imports
+    // hoist, so it would evaluate createAuthClient before API_URL exists — and
+    // a full page load rebuilds that store from nothing anyway.
+    window.location.replace("/login");
+  }
+
+  // Rethrow regardless, or every caller's catch receives undefined and React
+  // Query treats a failed request as a successful one with no data.
+  return Promise.reject(error);
+});

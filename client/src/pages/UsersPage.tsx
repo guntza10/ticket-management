@@ -1,6 +1,6 @@
 import { useUsers } from "@/features/users/api/get-users";
 import CreateUserDialog from "@/features/users/components/CreateUserDialog";
-import EditUserDialog from "@/features/users/components/EditUserDialog";
+import UsersTableRow from "@/features/users/components/UsersTableRow";
 import NavBar from "@/components/NavBar";
 import {
   Card,
@@ -87,7 +87,7 @@ export default function UsersPage() {
                           <Skeleton className="h-4 w-20" />
                         </TableCell>
                         <TableCell>
-                          <Skeleton className="h-8 w-8" />
+                          <Skeleton className="h-8 w-20" />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -101,20 +101,7 @@ export default function UsersPage() {
                     </TableRow>
                   )}
                   {users?.map((user) => (
-                    <TableRow key={user.id}>
-                      <TableCell>{user.name}</TableCell>
-                      <TableCell>{user.email}</TableCell>
-                      <TableCell>{user.role}</TableCell>
-                      <TableCell>
-                        {new Date(user.createdAt).toLocaleDateString()}
-                      </TableCell>
-                      {/* The whole row is handed over, though the dialog only
-                          reads id, name and email — passing three props would
-                          have to be kept in step with the form by hand. */}
-                      <TableCell className="text-right">
-                        <EditUserDialog user={user} />
-                      </TableCell>
-                    </TableRow>
+                    <UsersTableRow key={user.id} user={user} />
                   ))}
                 </TableBody>
               </Table>

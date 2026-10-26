@@ -17,6 +17,10 @@ export type UserRow = {
   email: string;
   role: "agent" | "admin";
   createdAt: string;
+  // Null means active. The roster returns deleted rows on purpose — they are
+  // rendered muted and badged rather than hidden, so the admin can see why an
+  // address is still taken. Same string-not-Date reason as createdAt.
+  deletedAt: string | null;
 };
 
 // No status check and no try/catch: axios rejects on 4xx/5xx, and React Query
