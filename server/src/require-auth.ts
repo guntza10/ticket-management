@@ -39,6 +39,19 @@ export async function requireAuth(
     return res.status(401).json({ error: "unauthenticated" });
   }
 
+  // A session whose user has since been soft-deleted. Normally unreachable,
+  // because the delete wipes that user's session rows in the same transaction
+  // that stamps deletedAt — but a sign-in that passed auth.ts's check just
+  // before the delete began can land its row just after the wipe.
+  //
+  // What this does **not** cover: index.ts mounts /api/auth/* above this guard,
+  // so a session born in that race still gets 200 from get-session and can
+  // still reach Better Auth's own routes. Closing that needs a different
+  // mechanism — see the Known gaps table in the root CLAUDE.md.
+  if (session.user.deletedAt) {
+    return res.status(401).json({ error: "unauthenticated" });
+  }
+
   res.locals.session = session;
   next();
 }
