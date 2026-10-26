@@ -5,7 +5,14 @@ import { API_URL } from "./auth";
 // that the expected values are present — is what turns this into a test of the
 // allow-list: a bare findMany would ship every column the table happens to
 // have, including whatever the next migration adds.
-export const ALLOWED_FIELDS = ["createdAt", "email", "id", "name", "role"];
+export const ALLOWED_FIELDS = [
+  "createdAt",
+  "deletedAt",
+  "email",
+  "id",
+  "name",
+  "role",
+];
 
 /** The password every spec-created account is given. Long enough for the rule. */
 export const NEW_USER_PASSWORD = "password1234";

@@ -33,6 +33,7 @@ const ADMIN: UserRow = {
   email: "admin@test.local",
   role: "admin",
   createdAt: "2026-01-15T00:00:00.000Z",
+  deletedAt: null,
 };
 
 const AGENT: UserRow = {
@@ -41,6 +42,7 @@ const AGENT: UserRow = {
   email: "agent@test.local",
   role: "agent",
   createdAt: "2026-02-20T00:00:00.000Z",
+  deletedAt: null,
 };
 
 // UsersPage reads `data` and nothing else, so filling in the rest of an
