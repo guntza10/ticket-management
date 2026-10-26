@@ -15,15 +15,19 @@
     "no-else-return": "error",
     "max-params": ["error", { "max": 4 }],
     "max-depth": ["error", { "max": 4 }],
-    // skipComments because this repo's house style is dense explanatory
-    // comments, so counting them made the rule measure prose rather than how
-    // much the function does. It fired at 106 lines on a 3-field form and was
-    // very nearly used to justify splitting that form into another component —
-    // reshaping code to satisfy a misconfigured tool. Measure the code.
-    "max-lines-per-function": [
-      "warn",
-      { "max": 100, "skipComments": true, "skipBlankLines": true }
-    ],
+    // max-lines-per-function is deliberately OFF. It measures length, and a
+    // React component's length is mostly markup — `UsersPage` was ~25 lines of
+    // logic under ~85 of JSX when this rule called it too long. In this repo it
+    // fired twice and the correct action was "do nothing" both times: at 106
+    // lines on CreateUserForm (where it was also miscounting comments, and was
+    // very nearly used to justify a FormField wrapper that had to be reverted)
+    // and at 110 on UsersPage. Zero true positives.
+    // `CLAUDE.md` already lists "the linter says it's too long" as a reason that
+    // is not a reason, so keeping the rule meant shipping a warning we had
+    // pre-committed to ignoring — which only teaches us to skim past lint
+    // output. **When to extract a unit** in CLAUDE.md is the real rule.
+    // max-lines (whole file) stays: it fired once, on a spec file holding three
+    // verbs, and splitting it was right.
     "max-lines": [
       "warn",
       { "max": 300, "skipComments": true, "skipBlankLines": true }
