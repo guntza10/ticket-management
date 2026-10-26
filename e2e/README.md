@@ -28,6 +28,11 @@ Current specs:
 - `edit-user.spec.ts` — the pencil opens the dialog for the row it sits in, a rename
   reaches the table without a reload, Save waits for a real change, and a taken address
   reports inline in the dialog that stays open
+- `users-api-delete.spec.ts` — `DELETE /api/users/:id` without a browser: who may
+  delete, the allow-list, the row surviving with `deletedAt` set, the wiped sessions,
+  the refused re-sign-in, the protected admin, and the idempotent re-delete
+- `delete-user.spec.ts` — the trash can asks first: confirming badges the row without a
+  reload, cancelling leaves it alone, and a deleted user's own open session stops working
 
 The `trustedOrigins` tests only work because `server/src/auth.ts` sets
 `advanced: { disableOriginCheck: false }`. Better Auth otherwise defaults that check

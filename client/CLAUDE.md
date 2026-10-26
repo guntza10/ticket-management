@@ -154,6 +154,40 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   `create-user.spec.ts` opens the dialog in three tests but never twice inside one, so
   moving the `useForm` call up into the dialog, or adding `forceMount`, would leave the
   whole E2E suite green.
+- **A destructive action asks with `AlertDialog`, not `Dialog`.** It renders
+  `role="alertdialog"` and forces a choice instead of allowing an idle dismissal.
+  `DeleteUserDialog` is the pattern: a `Trash2` ghost trigger labelled
+  `Delete ${user.name}`, a title naming the row, and a description that says what
+  actually happens rather than the usual "this cannot be undone" — ours *can* be
+  undone in the database, and what matters to the person is that the address stays
+  taken. `AlertDialogAction` closes on click by default, so the confirm handler calls
+  `event.preventDefault()`; without it the dialog disappears while the request is
+  still unanswered, which is the only place the pending state is visible.
+  On failure it **closes itself before** opening `ErrorDialog` — there is no field for
+  "the delete failed" to land on, and two Radix portals open at once fight over one
+  focus trap.
+- **A soft-deleted row is shown, not hidden.** `GET /api/users` returns it on purpose,
+  so `UsersTableRow` renders it muted with a `Deleted` badge **inside the name cell**
+  and no action buttons. The badge gets no column of its own: a column means a header
+  cell, a sixth skeleton cell, a `colSpan` bump and new counts in the test, all to say
+  something only some rows need to say. Note the cost it does have — the badge makes
+  that cell's accessible name read `"Some Name Deleted"`, so specs locate a row by its
+  **email** cell instead.
+  The delete button is also hidden on **admin** rows. That is the UI half of a rule the
+  server enforces with `403 admin_not_deletable`; hiding it is courtesy, the refusal is
+  what counts — the same split as the admin-only NavLink.
+- **`api` carries a 401 interceptor, and it is the only thing watching our own API.**
+  Better Auth's session store already refetches on window focus and nulls itself on a
+  401, so `ProtectedRoute` sends someone to `/login` on the next reload or tab switch —
+  do not re-implement that. What it cannot see is this axios instance: calls to
+  `/api/users` never pass through Better Auth, so nothing there learns the server
+  refused one. The interceptor covers exactly that gap, and three rules make it safe:
+  **401 only** (403 means "signed in, not allowed" and must reach the caller intact),
+  read `error.response?.status` (an aborted request has no `response`), and
+  **rethrow** or every caller's `catch` receives `undefined`. It deliberately does not
+  call `signOut()`: `api.ts` cannot import `auth-client.ts` without a runtime
+  `ReferenceError` — ES imports hoist and `auth-client` reads `API_URL` at module
+  scope — and a full page load rebuilds that store anyway.
 - **Auth:** go through `src/lib/auth-client.ts` (`signIn` / `signOut` / `useSession`).
 - **API calls:** use the `api` axios instance from `src/lib/api.ts` — never a bare
   `fetch`. It carries `baseURL` and `withCredentials: true`; the API is cross-origin, so
@@ -173,7 +207,8 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   named hook, one per endpoint, in `features/<domain>/api/` — `useCreateUser` in
   `api/create-user.ts`, `useUpdateUser` in `api/update-user.ts`, `useUsers` in
   `api/get-users.ts` — so the write and the cache it refreshes sit together and the
-  component is left holding markup. `DELETE` gets `api/delete-user.ts` beside them.
+  component is left holding markup. `DELETE` has `api/delete-user.ts` beside them —
+  it takes the id as a hook argument like update, because a delete has no body at all.
   They stay **separate hooks, not one `useSaveUser` that branches**: create and edit
   take different payload types, because a create must carry a password and an edit must
   be able to leave it out, and one input type loose enough for both would throw away the
@@ -268,14 +303,14 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - `src/pages/` — route pages (`LoginPage`, `HomePage`, `UsersPage`)
 - `src/features/<domain>/` — everything that only one domain uses, e.g.
   `features/users/components/` (`CreateUserDialog`, `CreateUserForm`,
-  `EditUserDialog`, `EditUserForm`)
+  `EditUserDialog`, `EditUserForm`, `DeleteUserDialog`, `UsersTableRow`)
 - `src/components/` — components **two or more** features or pages use
   (`NavBar`, `ProtectedRoute`, `ErrorDialog`, `PasswordInput`);
   `src/components/ui/` — shadcn (generated)
 - `src/features/<domain>/api/` — one file per endpoint, each exporting the hook the
   components call: `get-users.ts` (`useUsers` + the `UserRow` type the response has),
-  `create-user.ts`, `update-user.ts`, and `query-key.ts` holding the `USERS_QUERY_KEY`
-  all three name
+  `create-user.ts`, `update-user.ts`, `delete-user.ts`, and `query-key.ts` holding the
+  `USERS_QUERY_KEY` all four name
 - `src/lib/` — `auth-client.ts`, `api.ts` (`API_URL` + the `api` axios instance)
 - `src/test/` — test support, not tests: `setup.ts` (jest-dom matchers + per-test
   cleanup) and `axios-error.ts` (`axiosErrorWithStatus`, the rejection shape the app's

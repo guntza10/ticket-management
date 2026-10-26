@@ -204,22 +204,57 @@ not belong in it.
 
 A component, a hook, a module — the question is the same and it is **not** "is this file
 long?". Length is a symptom; a file that does one thing at 200 lines is fine and a file
-that does three things at 60 is not. Work down this list, and stop at the first **no**.
+that does three things at 60 is not.
+
+The rules below are the operative ones. The same material worked through from first
+principles — with the `FormField` and `UsersTableRow` cases in full — is
+`_resources/knowledge/when-to-extract-a-component.md`; correct both when one of them
+goes out of date.
+
+**First decide which kind of thing it is**, because the two kinds are judged by
+different questions, and getting that backwards is how this repo has gone wrong before.
+
+- **A piece of the UI that mirrors a piece of the data** — one row, one card, one item
+  in a list. React's own guidance is the criterion here, and it does not mention reuse
+  at all: *"a component should ideally only be concerned with one thing. If it ends up
+  growing, it should be decomposed into smaller subcomponents"*, and *"separate your UI
+  into components, where each component matches one piece of your data model"*. The
+  documented examples (`Recipe` out of `RecipeList`, `Report` out of `ReportList`) each
+  have exactly one caller. **Extract when it mirrors one piece of the data — waiting for
+  a second caller is the wrong test for this kind.**
+- **An abstraction over something else** — a wrapper, a shared helper, a generic
+  "field" or "layout" component. Here reuse *is* the test, because the thing has no
+  shape of its own until a second caller argues about it.
+
+Then work down, and weigh rather than stop dead:
 
 | Ask | Why it decides |
 | --- | --- |
-| **1. Does something else call it yet?** | One caller means extracting buys a second file to open and nothing else. Two callers mean the thing has an identity of its own. This is the heaviest question — a *no* here usually ends it. |
+| **1. Does it mirror one piece of the data, or own one concern?** | The React criterion above. A table row, a card, a list item — each matches one record, so it has an identity before anyone reuses it. |
 | **2. Does it own state or logic?** | A `useState`, a query, a mutation, an event handler — something that can be wrong on its own. Pure JSX moved to another file is the same JSX somewhere less convenient. |
 | **3. Would a test aim at it directly?** | `ProtectedRoute` is tiny with four branches and earns its own file; `HomePage` is a whole page with none and does not. Branches, not size. |
-| **4. Is it genuinely hard to read in place?** | True sometimes, but it is a feeling. On its own it is not enough — it needs one of the three above behind it. |
+| **4. Is something else calling it yet?** | The heaviest question **for an abstraction**: one caller means a guessed API and a second file to open. For a data-shaped component it carries little — see the split above. |
+| **5. Is it genuinely hard to read in place?** | True sometimes, but it is a feeling. On its own it is not enough — it needs one of the four above behind it. |
+
+**This list was reordered on 2026-10-26, and the reason is worth keeping.** It used to
+lead with "does something else call it yet?" and say *stop at the first no*. That was
+generalised from one case — `FormField`, which really was an abstraction and really did
+fail that test. Applied to a table row it gave the wrong answer twice over: it stopped
+at question 4 before question 1 or 3 could be heard, and it contradicted React's own
+documented criterion, which nobody had checked.
 
 **Reasons that are not reasons:**
 
 - **"The linter says the function is too long."** A linter reports; it never prescribes.
-  `max-lines-per-function` fired at 106 lines on a three-field form and was used to
-  justify extracting a `FormField` wrapper. The real finding was that the rule counted
-  comment lines in a codebase whose house style is dense comments (`skipComments` fixed
-  it, `77c0154`). Check the tool's configuration before reshaping code to satisfy it.
+  `max-lines-per-function` is now **off in all three configs**, because it never once
+  produced a finding worth acting on: it fired at 106 lines on a three-field form (while
+  miscounting comments, and was nearly used to justify the `FormField` wrapper that had
+  to be reverted) and at 110 on `UsersPage`, which was ~25 lines of logic under ~85 of
+  JSX. A component's length is mostly markup, so the rule measures the wrong thing here.
+  Keeping a warning the house rule pre-commits to ignoring only teaches you to skim past
+  lint output. **`max-lines` (whole file) stays** — it fired once, on a spec file holding
+  three verbs, and splitting it was right. The general lesson survives the removal: check
+  what the tool is measuring before reshaping code to satisfy it.
 - **"It removes duplication."** Repetition is only worth removing when the copies must
   change together. Five lines of markup repeated per field, each one independently
   readable, is cheaper than an abstraction a reader has to go and learn.
@@ -235,19 +270,29 @@ that does three things at 60 is not. Work down this list, and stop at the first 
   to "fix" that was solving a problem the library does not have. Matching the documented
   shape beats saving five lines a field, because the documented shape is the one a
   tutorial, a search result or a later reading of the docs will agree with.
-- **`CreateUserDialog` + `CreateUserForm` — kept**, on question 2 and a technical
-  requirement: Radix unmounts `DialogContent` on close, so the `useForm` call living in
+- **`CreateUserDialog` + `CreateUserForm` — kept**, on "does it own state or logic"
+  and a technical requirement: Radix unmounts `DialogContent` on close, so the `useForm` call living in
   the child is what makes every open start blank.
 - **`useCreateUser` and `useUpdateUser` — moved into `features/users/api/`**
-  (2026-10-23), and the reason matters more than the move. It was **not** question 1:
-  each hook still has exactly one caller, and *a second near-identical hook is not a
-  second caller*. It was the **Folder structure** rule below — where a file lives is the
+  (2026-10-23), and the reason matters more than the move. It was **not** the
+  second-caller question: each hook still has exactly one caller, and *a second
+  near-identical hook is not a second caller*. It was the **Folder structure** rule below — where a file lives is the
   cheap half — plus one thing that was genuinely stuck: `UserRow` described the users
   feature's data from inside `pages/UsersPage.tsx`, and a feature may not import from
   `pages/`, so `EditUserForm` had to restate the fields it needed. Moving the row type
   into `api/get-users.ts` is what let it become `Pick<UserRow, …>`; the two hooks came
   along because splitting their folder from the type's would have been the worse half of
   a move. They stay **two hooks, not one that branches** — see `client/CLAUDE.md`.
+
+- **`UsersTableRow` — extracted** (2026-10-26), and it is the first decision made under
+  the reordered list above rather than the old one. It is a data-shaped component: one
+  row, one user, matching React's own criterion. Under the previous ordering it was
+  refused twice, because "does something else call it yet?" said no and stopped the
+  list before "would a test aim at it?" could say yes. The payoff is exactly that test:
+  the three conditions a row decides (muted, badged, which buttons) are now reached with
+  one prop instead of through a page, a fake roster request, a query client and a
+  router. `UsersPage` dropped from 139 lines of code to 99, and the row is 39 — the point is
+  not the arithmetic but that the row now has a name and a test of its own.
 
 ### Folder structure: adopt the rule, not the empty folders
 
@@ -307,8 +352,7 @@ testing without HTTP shows up.
   function `prisma/seed.ts` now uses, because a disagreement about `providerId` or the
   hasher produces an account that is created successfully and can never sign in. The
   role is forced to `agent` server-side and the address is lowercased, since
-  `/sign-in/email` looks a user up by `email.toLowerCase()`. Delete is still open
-  (Phase 3).
+  `/sign-in/email` looks a user up by `email.toLowerCase()`.
 - ✅ **Edit user** — `PATCH /api/users/:id` (admin-only) behind a pencil button on each
   row of `/users`, opening a dialog prefilled with that row. **A blank password field
   means "leave the password alone"**, and it has to travel as an *absent* JSON field:
@@ -317,15 +361,29 @@ testing without HTTP shows up.
   `updateUserSchema` turns `""` into `undefined` and `JSON.stringify` drops it. Role
   stays uneditable — no endpoint reads a role from a body — and Save is disabled until
   something differs from the row.
+- ✅ **Delete user** — `DELETE /api/users/:id` (admin-only) behind a trash button on
+  each row, guarded by an `AlertDialog`. It is a **soft delete**: `deletedAt` is
+  stamped, the row stays, and the roster goes on listing it muted with a `Deleted`
+  badge — which is what later explains why its address still answers 409 to a create.
+  **Admins can never be deleted** (`403 admin_not_deletable`, and no button on their
+  row), and the rule lives in the `WHERE` so the database enforces it rather than a
+  check-then-act. Deleting is idempotent and keeps the first timestamp.
+  **The deleted person is put out and kept out, in three layers** — their session rows
+  are wiped in the same transaction as the flag, `auth.ts` refuses them a new session
+  with the *same* answer a wrong password gets, and the client's 401 interceptor sends
+  the browser to `/login`. The course's reference project stops after the first, which
+  leaves a deleted user able to sign in and then fail on everything.
 - ✅ **E2E** — Playwright against a dedicated `ticket_management_test` DB and test ports;
-  **75 specs** — the auth system end to end (sign-in, validation, route protection,
-  session lifecycle, cookie/CORS/CSRF properties) plus **29 API-level specs** that skip
-  the browser and call the server directly, covering `/api/users` on all three verbs:
-  who may read, create and edit, the field allow-list on every answer, what a create
-  refuses, and — the one thing only a real sign-in can settle — that an edit carrying no
-  password leaves the old one working while an edit carrying one replaces it. Every run
-  migrates, truncates and re-seeds itself.
-- ✅ **Component tests** — Vitest + Testing Library, **37 specs**. `UsersPage` covers all
+  **89 specs** — the auth system end to end (sign-in, validation, route protection,
+  session lifecycle, cookie/CORS/CSRF properties) plus **40 API-level specs** that skip
+  the browser and call the server directly, covering `/api/users` on all four verbs:
+  who may read, create, edit and delete, the field allow-list on every answer, and what
+  each one refuses. Three of those settle things only a real sign-in can: an edit
+  carrying no password leaves the old one working while one carrying a password
+  replaces it, a deleted user's live cookie stops resolving, and they cannot sign back
+  in — with an answer byte-identical to a wrong password. Every run migrates, truncates
+  and re-seeds itself.
+- ✅ **Component tests** — Vitest + Testing Library, **48 specs**. `UsersPage` covers all
   four render states (loading, rows, empty, error), `ProtectedRoute` all four branches
   (loading, signed out, wrong role, allowed), `CreateUserForm` its validation, its
   payload, both failure messages, the invalidation, that it waits for the refetch
@@ -336,13 +394,19 @@ testing without HTTP shows up.
   failure messages, the invalidation, and — the feature's central rule — that a blank
   password field produces a request body with **no `password` key at all** while a typed
   one sends it, `EditUserDialog` that each open re-reads the row rather than reviving an
-  abandoned edit, and `NavBar` what happens when the server refuses a sign-out
+  abandoned edit, `DeleteUserDialog` that it asks before it deletes, that Cancel
+  sends nothing, that the dialog stays up and takes one click while the request is
+  unanswered, that a refused delete is reported without two dialogs on screen at once,
+  and that it names the right cache key, `UsersTableRow` the three conditions one row
+  decides (a live user with both actions, a deleted one badged and offering none, an
+  admin that can be edited but not deleted), `api` that a 401 sends the browser to
+  `/login` while a 403 is handed back untouched, and `NavBar` what happens when the server refuses a sign-out
   (including a refusal that carries no message to quote).
   Several of those states are ones E2E cannot stage: the server will not return an empty
   roster, fail on request, or reject a sign-out on demand, the loading states are
   gone before an assertion can land on them, and a request can only be held unanswered
   where the client is the one answering it.
-- ⏭️ **Next** — the rest of Phase 3 (delete a user), then the tickets domain (schema + API + UI).
+- ⏭️ **Next** — Phase 3 is complete; the tickets domain is next (schema + API + UI).
 
 ## Known gaps — deliberately deferred
 
@@ -357,6 +421,8 @@ is what will make it start hurting; revisit when you hit it.
 | **No catch-all route.** `App.tsx` has `/login`, `/`, `/users` and nothing else, so an unknown URL renders a blank page. | Anyone mistyping a URL; more so once there are more routes. | Add a `*` route with a 404 page, then a spec for it. |
 | **No "return to intended page" after sign-in.** A signed-out visit to `/users` lands on `/` after login, not `/users`. | Deep links being shared, or any flow that sends users to a specific page. | Have `ProtectedRoute` record the attempted path and `LoginPage` honour it. |
 | **Form fields carry no `aria-describedby`,** so a validation message is announced when it appears (`FieldError` is `role="alert"`) but is not read out when the field is focused again — a screen reader hears "invalid" with no reason. Every documented shadcn `Field` example omits it too; the retired `form.tsx` was the only thing that ever wired it. | An accessibility pass, or the third or fourth form — at which point the wiring is worth centralising. | Give `FieldError` an `id` and point the control's `aria-describedby` at it (unconditionally: `FieldError` renders nothing when empty, and a dangling reference is ignored). A shared wrapper to derive those ids was built and reverted once already — if it comes back, it should come back because several forms need it, not to satisfy a line-count rule. |
-| **Changing a password does not end that user's sessions.** Better Auth's sessions are rows keyed by token, not by the password hash, so an admin resetting an agent's password leaves anyone already signed in as that agent signed in. | Any sign a password is being reset *because* an account is compromised — or a "sign out everywhere" button, which is the same mechanism. | Delete that user's `session` rows in the same transaction as the password write in `server/src/users/update-user.ts`, and add an API spec that proves the old cookie stops working. Decided against for now (2026-10-23): it is a second concern inside an edit form, and the honest version needs a way to tell "reset because compromised" from "reset because forgotten". |
+| **Changing a password does not end that user's sessions.** Better Auth's sessions are rows keyed by token, not by the password hash, so an admin resetting an agent's password leaves anyone already signed in as that agent signed in. | Any sign a password is being reset *because* an account is compromised — or a "sign out everywhere" button, which is the same mechanism. | Delete that user's `session` rows in the same transaction as the password write in `server/src/users/update-user.ts`, and add an API spec that proves the old cookie stops working. **`server/src/users/delete-user.ts` now does exactly that**, so this is a copy of a working mechanism from the file next door rather than new work. Still decided against (2026-10-23): it is a second concern inside an edit form, and the honest version needs a way to tell "reset because compromised" from "reset because forgotten". |
 | **`CardTitle` renders a `div`, not a heading.** Screen readers find no page headings; specs assert body copy instead of `getByRole("heading")`. | Any accessibility pass. | Render page titles as real headings, then switch those assertions over. |
-| **The suite is top-heavy** — 75 specs at the E2E layer (29 of them API-level), 37 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |
+| **A sign-in that races a delete leaves a session Better Auth's own routes still honour.** `auth.ts` refuses the session, and `requireAuth` 401s it — but `index.ts` mounts `/api/auth/*` **above** `requireAuth`, so a session born in that window still gets 200 from `get-session` and can reach `change-password`, `update-user` and friends. The client then believes it is signed in while every app call 401s, and `LoginPage` bounces the interceptor's redirect back to `/`. | Any evidence it has actually happened, or a second place that creates sessions. | The window is already narrowed twice (a post-commit session sweep, and the guard in `requireAuth`). Closing it needs a check inside Better Auth's own request path — its `admin` plugin's `banned` field is the mechanism that does this, so adopting that plugin is the real fix and a bigger decision than this feature was. |
+| **`forget-password` would mail a deleted user a working reset link.** The route reads the user by address and nothing there consults `deletedAt`. Harmless today: `emailAndPassword.sendResetPassword` is not configured, so the route cannot do anything. | The day password reset is turned on. | Add the same `deletedAt` check to that path, or move the check into a place every Better Auth route crosses. |
+| **The suite is top-heavy** — 89 specs at the E2E layer (40 of them API-level), 48 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |

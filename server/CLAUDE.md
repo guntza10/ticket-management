@@ -86,14 +86,15 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
 - **Endpoints returning user data always `select` an allow-list of fields.** A bare
   `findMany()` ships every column the table happens to have, including whatever the next
   migration adds. That list is **one exported constant** — `PUBLIC_USER_FIELDS` in
-  `users/create-user.ts` — which `GET` and `POST /api/users` both import, so a column
-  added to it reaches every answer at once. `PATCH` and `DELETE` should import it too
-  rather than writing a `select` of their own; the two that existed were hand-kept
+  `users/create-user.ts` — which all four verbs import, so a column
+  added to it reaches every answer at once. `deletedAt` is in the list because the
+  roster deliberately returns deleted rows, so the client can tell which ones they are.
+  Nobody writes a `select` of their own; the two that existed were hand-kept
   copies until 2026-10-22, with a comment claiming they were shared. A plain object is
   enough, no `as const` or `satisfies`: Prisma still narrows the result type from it,
   so reading a field that was not selected is a type error.
-  `e2e/users-api.spec.ts` asserts the exact key set on every row of both answers, which
-  is the check that survives someone reintroducing a second copy.
+  The `e2e/users-api*.spec.ts` files assert the exact key set on every row of every
+  answer, which is the check that survives someone reintroducing a second copy.
 
 ## Creating accounts
 
@@ -166,17 +167,74 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
   get a `200` saying the password was changed when nothing was written. Throwing rolls
   the profile update back too, which is right: the caller asked for one change.
 - **Missing row: catch Prisma `P2025`, don't pre-check** — same reasoning as `P2002` for
-  a duplicate address. `user.update`'s `where` is the only one in the transaction, so
-  `P2025` cannot mean anything else there.
+  a duplicate address. `user.update` is the only call in that transaction that can
+  raise `P2025` — the account write beside it is an `updateMany`, which answers
+  `count: 0` instead of throwing. Since 2026-10-25 its `where` also carries
+  `deletedAt: null`, so `P2025` means "no such row **or** it is deleted"; both answer
+  404, because a deleted user is not editable either.
 - **Changing a password does not end that user's sessions.** Better Auth's sessions are
   rows keyed by token, not by the password hash, so someone already signed in stays
   signed in. Deliberate for now — see the Known gaps table in the root `CLAUDE.md`.
 
+## Deleting accounts
+
+- **It is a soft delete.** `DELETE /api/users/:id` stamps `User.deletedAt` and leaves
+  the row. The roster goes on listing it — muted and badged on the client — because
+  that is what later explains why its address still answers 409 to a create.
+  `@@unique([email])` is deliberately left whole rather than made partial.
+- **The rules live in the `WHERE`, not in a read before it.**
+  `where: { id, role: { not: "admin" }, deletedAt: null }` — Prisma allows extra
+  non-unique filters beside a unique one, so the database enforces "never an admin"
+  and "don't re-stamp an existing timestamp" in one statement. `P2025` then triggers a
+  single *diagnostic* read that only chooses between 404, `admin_not_deletable` and
+  already-deleted. Same reasoning as `P2002` for a duplicate address: a check before
+  the write cannot close the gap between itself and the write.
+- **Deleting is idempotent and keeps the first timestamp.** A second DELETE answers 200
+  with the row unchanged; the deletion that happened is the one recorded.
+- **Wiping the user's sessions is part of the contract, not a side effect.** It is in
+  the same transaction as the flag, because a user marked deleted whose sessions
+  survived is the exact state the feature exists to prevent. A second sweep runs after
+  the commit to narrow the race below. Raw `session.deleteMany` rather than Better
+  Auth's `internalAdapter.deleteUserSessions`, so it can share the transaction — only
+  safe because `cookieCache` is off.
+  - No test can tell those two wipes apart; removing either alone leaves the suite
+    green, and only removing both turns it red. That is written in the file so neither
+    reads as dead code.
+- **Signing back in is refused separately, in `auth.ts`.** A soft delete leaves the
+  `user` row and its credential `account` row untouched, so the password still verifies
+  — without this, deleting someone only logs them out until they type it again. This is
+  the layer the course's reference project omits, which leaves its deleted users able
+  to sign in and then 401 on everything.
+  - `hooks.before` on `/sign-in/email` throws the *same* error a wrong password throws
+    (`APIError.from("UNAUTHORIZED", BASE_ERROR_CODES.INVALID_EMAIL_OR_PASSWORD)`), so
+    nobody can learn from outside whether an address belongs to a deleted account or to
+    none at all. `users-api-delete.spec.ts` asserts the two bodies are *equal*.
+  - `databaseHooks.session.create.before` returning `false` is the backstop, since
+    `hooks.before` is shaped around one route's body. On its own it answers 401
+    `FAILED_TO_CREATE_SESSION` — a message `LoginPage` prints verbatim — which is why
+    it is second and not first.
+- **`requireAuth` also 401s a session whose user is deleted**, for the race where a
+  sign-in lands between the hook's read and the delete's commit. It does **not** cover
+  `/api/auth/*`, which `index.ts` mounts above it — see the Known gaps table in the
+  root `CLAUDE.md`.
+- **`deletedAt` must be declared in `user.additionalFields`** or it never reaches
+  `session.user`: Better Auth builds that object from the fields it knows about.
+  Removing the declaration is a `tsc` error in `require-auth.ts`, which is the proof.
+- **`PATCH` refuses a deleted user with 404**, via `deletedAt: null` in its own `where`.
+  Deliberate even though the roster still shows the row: visible is not editable.
+- **The seed revives a soft-deleted row** rather than skipping it. Its "already exists"
+  check is by address, so skipping would report that about an account nobody can sign
+  in to — and with no restore in the product, re-seeding would be the only way out and
+  it would not work. A restore living in a script an admin runs is a different thing
+  from a button.
+
 ## Error handling
 
 - **Every error answers `{ error: "<snake_case_code>" }`.** In use: `unauthenticated`
-  (401), `forbidden` (403), `invalid_body` (400), `user_not_found` (404),
-  `email_taken` (409), `internal_error` (500). A client reads the code; the prose for
+  (401), `forbidden` (403), `admin_not_deletable` (403), `invalid_body` (400),
+  `user_not_found` (404), `email_taken` (409), `internal_error` (500).
+  Two codes share 403 on purpose: `forbidden` means the *caller* may not be here,
+  `admin_not_deletable` means the caller is entitled and the *target* is protected. A client reads the code; the prose for
   a person is the client's job.
 - **One error-handling middleware, last in `index.ts`** — four parameters
   (`err, req, res, next`); three and Express silently treats it as ordinary
@@ -233,7 +291,8 @@ production; `.env.test` sets `NODE_ENV=test` so E2E runs don't hit 429s.
 - `src/index.ts` — Express app wiring: middleware, mounts, error handler, `listen`
 - `src/users/` — the `/api/users` module: `users.routes.ts` (the router),
   `create-user.ts` (the field allow-list + the row-writing function shared with
-  `prisma/seed.ts`) and `update-user.ts` (the profile/password write behind `PATCH`)
+  `prisma/seed.ts`), `update-user.ts` (the profile/password write behind `PATCH`)
+  and `delete-user.ts` (the soft delete behind `DELETE`)
 - `src/auth.ts` — better-auth config · `src/require-auth.ts` — session guard
   · `src/require-admin.ts` — role guard
 - `src/db.ts` — Prisma client · `prisma/` — schema, migrations, `seed.ts`
