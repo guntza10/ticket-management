@@ -3,24 +3,28 @@ import type { Role } from "../generated/prisma/client.ts";
 import prisma from "../db.ts";
 import { auth } from "../auth.ts";
 
-// The field set both /api/users endpoints answer with — GET imports this too,
-// so a column added here reaches the create response and the roster together
-// and the two cannot disagree. It used to say "the same allow-list GET selects"
-// while GET wrote its own copy two files away, which read as a problem already
-// solved. `e2e/users-api.spec.ts` asserts this exact key set on every row of
-// both answers, so it is still checked from the outside as well.
 // What Better Auth calls an email+password account, as opposed to a social one.
 // It was a literal in one place until update-user.ts started *reading* rows by
 // it, and a reader and a writer disagreeing on this string is the exact failure
 // server/CLAUDE.md warns about: nothing throws, the row simply is not found.
 export const CREDENTIAL_PROVIDER_ID = "credential";
 
+// The field set every /api/users endpoint answers with — GET, POST, PATCH and
+// DELETE all import this one, so a column added here reaches all four answers
+// together and they cannot disagree. It used to say "the same allow-list GET
+// selects" while GET wrote its own copy two files away, which read as a problem
+// already solved. `e2e/users-api*.spec.ts` asserts this exact key set on every
+// row of every answer, so it is still checked from the outside as well.
+//
+// deletedAt is in here because the roster deliberately shows deleted rows, so
+// the client needs to know which ones they are. Null means active.
 export const PUBLIC_USER_FIELDS = {
   id: true,
   name: true,
   email: true,
   role: true,
   createdAt: true,
+  deletedAt: true,
 };
 
 /**

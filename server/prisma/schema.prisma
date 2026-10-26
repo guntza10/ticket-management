@@ -40,9 +40,18 @@ model User {
   role          Role      @default(agent)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  // Soft delete: DELETE /api/users/:id stamps this instead of removing the row,
+  // so the roster can keep showing who used to be here. Null means active.
+  //
+  // No index on purpose — GET /api/users deliberately does not filter on it, so
+  // there is nothing to speed up. Add one only if a query starts filtering.
+  deletedAt     DateTime?
   sessions      Session[]
   accounts      Account[]
 
+  // Left as a plain unique on purpose, not made partial. A soft-deleted row
+  // keeps occupying its address, so re-creating it answers 409 — decided, not
+  // overlooked. The admin can see why, because the deleted row is still listed.
   @@unique([email])
   @@map("user")
 }

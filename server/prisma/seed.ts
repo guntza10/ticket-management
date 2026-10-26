@@ -25,7 +25,25 @@ async function seedUser(user: {
   // account that breaks the app's own rule.
   const { name, email, password } = createUserSchema.parse(user);
 
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, deletedAt: true },
+  });
+
+  // Soft-deleted: revive it rather than skip. The check above is by address, so
+  // skipping would report "already exists" about an account nobody can sign in
+  // to — and the product has no restore button, on purpose, so re-seeding would
+  // be the only way out and it would not work. A restore that lives in a script
+  // an admin runs is a different thing from one in the UI.
+  if (existing?.deletedAt) {
+    await prisma.user.update({
+      where: { id: existing.id },
+      data: { deletedAt: null },
+    });
+    console.log(`Revived a soft-deleted user: ${email}`);
+    return;
+  }
+
   if (existing) {
     console.log(`Already exists (${email}) — skipping.`);
     return;

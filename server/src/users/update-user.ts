@@ -36,12 +36,17 @@ export async function updateUser(id: string, input: UpdateUserInput) {
       : await (await auth.$context).password.hash(input.password);
 
   return prisma.$transaction(async (tx) => {
-    // Throws P2025 when no row has this id, which the route turns into a 404.
-    // No findUnique first, for the same reason POST does not pre-check the
-    // address: a check cannot close the gap between itself and the write, so it
-    // buys a round-trip and no correctness.
+    // Throws P2025 when the filter matches nothing, which the route turns into
+    // a 404. No findUnique first, for the same reason POST does not pre-check
+    // the address: a check cannot close the gap between itself and the write,
+    // so it buys a round-trip and no correctness.
+    //
+    // `deletedAt: null` is part of the filter, so editing a deleted user is
+    // refused by the database rather than by a branch here. The roster still
+    // shows that row, which is why the 404 is worth stating as deliberate: the
+    // person is visible, but they are not editable.
     const user = await tx.user.update({
-      where: { id },
+      where: { id, deletedAt: null },
       data: { name: input.name, email: input.email },
       select: PUBLIC_USER_FIELDS,
     });

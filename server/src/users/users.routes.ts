@@ -12,6 +12,7 @@ import {
   PUBLIC_USER_FIELDS,
 } from "./create-user.ts";
 import { updateUser } from "./update-user.ts";
+import { softDeleteUser } from "./delete-user.ts";
 
 // Mounted at /api/users by index.ts, so every path below is relative to that.
 // Keeping the prefix at the mount point means it is written once and a rename
@@ -19,11 +20,10 @@ import { updateUser } from "./update-user.ts";
 const router = Router();
 
 // Both guards once, for the whole router, rather than repeated on each route.
-// Every route here is admin-only and DELETE will be too — and the mistake that
-// actually ships is a new route added without them, not a route that needed to
-// opt out. PATCH below inherits them without saying so, which is the point.
-// Order still matters:
-// requireAdmin reads the session requireAuth puts on res.locals.
+// Every route here is admin-only — and the mistake that actually ships is a new
+// route added without them, not a route that needed to opt out. PATCH and
+// DELETE below inherit them without saying so, which is the point. Order still
+// matters: requireAdmin reads the session requireAuth puts on res.locals.
 router.use(requireAuth, requireAdmin);
 
 // `select` is an allow-list, not a convenience: the user table also holds
@@ -100,10 +100,12 @@ router.patch("/:id", async (req, res) => {
     res.json({ user });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError) {
-      // No row with that id. user.update is the only call in the transaction
-      // that can raise P2025 — the account write beside it is an updateMany,
-      // which answers `count: 0` instead of throwing (see update-user.ts) — so
-      // this cannot mean anything else.
+      // Either no row with that id, or the row is soft-deleted — update-user's
+      // filter refuses both the same way, and the client has no use for the
+      // difference: a deleted user is not editable either. user.update is the
+      // only call in that transaction that can raise P2025, because the account
+      // write beside it is an updateMany, which answers `count: 0` instead of
+      // throwing.
       if (err.code === "P2025") {
         res.status(404).json({ error: "user_not_found" });
         return;
@@ -117,6 +119,30 @@ router.patch("/:id", async (req, res) => {
     // Including the "no credential account" error updateUser throws — that is a
     // broken row, not a request to answer, so it belongs in the 500 handler.
     throw err;
+  }
+});
+
+// Soft delete: the row stays, `deletedAt` is stamped, and the user's sessions
+// are wiped so the cookie they hold stops working. No body, so nothing to
+// validate — the id in the path is the whole request.
+//
+// The two refusals are different kinds of no. `forbidden` from requireAdmin
+// means the *caller* may not be here; `admin_not_deletable` means the caller
+// is perfectly entitled and the *target* is protected. A client that could not
+// tell them apart would show the wrong message to the wrong person.
+router.delete("/:id", async (req, res) => {
+  const result = await softDeleteUser(req.params.id);
+
+  switch (result.status) {
+    case "deleted":
+      res.json({ user: result.user });
+      return;
+    case "is_admin":
+      res.status(403).json({ error: "admin_not_deletable" });
+      return;
+    case "not_found":
+      res.status(404).json({ error: "user_not_found" });
+      return;
   }
 });
 
