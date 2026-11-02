@@ -1,6 +1,6 @@
 import { useUsers } from "@/features/users/api/get-users";
 import CreateUserDialog from "@/features/users/components/CreateUserDialog";
-import UsersTableRow from "@/features/users/components/UsersTableRow";
+import UsersTable from "@/features/users/components/UsersTable";
 import NavBar from "@/components/NavBar";
 import {
   Card,
@@ -9,21 +9,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
 
-// The page renders the roster; it does not define how the roster is fetched.
-// The request, its row type and the cache key it reads under all live in
-// features/users/api/, next to the two mutations that invalidate that same
-// key — naming a different one there is the silent failure this arrangement
-// is for.
+// The page fetches the roster and frames it; the table itself knows what
+// columns it has and which of its three bodies to show. The request, its row
+// type and the cache key it reads under all live in features/users/api/, next
+// to the mutations that invalidate that same key — naming a different one there
+// is the silent failure this arrangement is for.
 export default function UsersPage() {
   const { data: users, isPending, error } = useUsers();
 
@@ -47,64 +38,13 @@ export default function UsersPage() {
                 background refetch still leaves the previous rows on screen and
                 usable — discarding them is the opposite of why the cache is
                 here. Only a first load, which has no rows yet, shows the error
-                alone. */}
+                alone, which is what the guard below is for: with no rows and
+                nothing in flight there is no table worth rendering. */}
             {error && (
               <p className="text-destructive mb-4">{error.message}</p>
             )}
             {(isPending || users) && (
-              // The header is real even while loading: it is static content, and
-              // rendering it up front is what keeps the skeleton the same shape
-              // as the table that replaces it, so nothing shifts.
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Created</TableHead>
-                    {/* The actions column has no label: a heading for a column
-                        of icon buttons reads out before every row and says
-                        nothing the buttons' own names do not. */}
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {/* Three placeholder rows — a guess at the roster size, which
-                      is fine, since the point is only to hold the shape. */}
-                  {isPending &&
-                    Array.from({ length: 3 }, (_, i) => (
-                      <TableRow key={i}>
-                        <TableCell>
-                          <Skeleton className="h-4 w-28" />
-                        </TableCell>
-                        <TableCell>
-                          <Skeleton className="h-4 w-44" />
-                        </TableCell>
-                        <TableCell>
-                          <Skeleton className="h-4 w-14" />
-                        </TableCell>
-                        <TableCell>
-                          <Skeleton className="h-4 w-20" />
-                        </TableCell>
-                        <TableCell>
-                          <Skeleton className="h-8 w-20" />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  {/* colSpan must match the header count above — a new column
-                      added there has to be counted here too. */}
-                  {users?.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-muted-foreground">
-                        No users found.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {users?.map((user) => (
-                    <UsersTableRow key={user.id} user={user} />
-                  ))}
-                </TableBody>
-              </Table>
+              <UsersTable users={users} isPending={isPending} />
             )}
           </CardContent>
         </Card>

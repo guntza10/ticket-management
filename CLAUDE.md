@@ -243,6 +243,41 @@ fail that test. Applied to a table row it gave the wrong answer twice over: it s
 at question 4 before question 1 or 3 could be heard, and it contradicted React's own
 documented criterion, which nobody had checked.
 
+### Surveying for candidates — the part that has gone wrong twice
+
+The five questions above are for judging *one* candidate someone already noticed. The
+step before them is noticing, and that is where this repo has actually failed. Use
+triggers you can **see**, not taste:
+
+| What is visibly there | What it means | What is owed |
+| --- | --- | --- |
+| A `.map()` over data inside something that also does other work | the item mirrors one record | extract the item — `UsersTableRow` |
+| A container whose structure has to agree with that item: headers, a `colSpan`, a skeleton with one cell per column | the container mirrors the **collection** | extract the container — `UsersTable` |
+| **Two or more files that must agree on a count, an order or a shape, with nothing enforcing it** | the boundary is in the wrong place | move them into one file **and assert the agreement in a test** |
+| Three or more render states (pending / empty / error / rows) branching inside a page | the state switch belongs to the thing being rendered, not to the page | extract the thing being rendered |
+
+**Procedure for a sweep.** Ask *every* trigger, not the first that matches, and say in
+the report which ones were asked. "Surveyed 14 files, found one candidate" is not a
+result — it does not say what was looked for. A sweep that finds exactly one candidate
+in an app holding a table, a list and four dialogs should be re-run before it is
+believed.
+
+**When an extraction leaves an agreement behind, assert it.** Co-location makes a
+mismatch easy to notice; a test makes it impossible to ship. `UsersTable.test.tsx`
+compares the skeleton's cells, a real row's cells and the empty row's `colSpan` against
+the **rendered `columnheader` count** rather than against `5`, so a half-added column
+turns three tests red. Comparing against a literal would have passed.
+
+**What went wrong on 2026-10-26, recorded because the shape of the mistake repeats.**
+The project-wide sweep asked one question — "what mirrors one row?" — found
+`UsersTableRow`, and reported the project surveyed. React's criterion names both halves
+(`Recipe` **and** `RecipeList`), and only the record half was looked for, so `UsersTable`
+was never considered at all — despite scoring higher on the five questions, since it owns
+the three-way body switch as well as the columns. The miss then produced a second one:
+`client/CLAUDE.md` claimed a column added without its `colSpan` would need "new counts in
+the test", while every test counted `row` and none counted `cell`. **A claim that a
+mistake would be caught is worth checking against the test that supposedly catches it.**
+
 **Reasons that are not reasons:**
 
 - **"The linter says the function is too long."** A linter reports; it never prescribes.
@@ -291,8 +326,20 @@ documented criterion, which nobody had checked.
   list before "would a test aim at it?" could say yes. The payoff is exactly that test:
   the three conditions a row decides (muted, badged, which buttons) are now reached with
   one prop instead of through a page, a fake roster request, a query client and a
-  router. `UsersPage` dropped from 139 lines of code to 99, and the row is 39 — the point is
+  router. The row is 39 lines — the point is
   not the arithmetic but that the row now has a name and a test of its own.
+
+- **`UsersTable` — extracted** (2026-11-02), and it is the candidate the 2026-10-26 sweep
+  should have found. It is the collection half of the same criterion: React's documented
+  examples pair `Recipe` with `RecipeList`, and only the first was looked for. It scores
+  higher than the row did — it mirrors the collection (Q1), owns the three-way switch
+  between skeleton, empty row and rows (Q2), and three tests aim straight at it (Q3).
+  **What forced it was not the page's length but an agreement no one was enforcing:** the
+  headers, the empty row's `colSpan` and the skeleton's cell count sat in `UsersPage`
+  while the data cells sat in `UsersTableRow`, so adding a column meant editing two files
+  and nothing said when one was forgotten — and the doc wrongly claimed a test would
+  notice. `UsersPage` is now 45 lines of code, the table is 92, and the three tests
+  compare every body against the rendered header count instead of a literal 5.
 
 ### Folder structure: adopt the rule, not the empty folders
 
@@ -383,8 +430,11 @@ testing without HTTP shows up.
   replaces it, a deleted user's live cookie stops resolving, and they cannot sign back
   in — with an answer byte-identical to a wrong password. Every run migrates, truncates
   and re-seeds itself.
-- ✅ **Component tests** — Vitest + Testing Library, **48 specs**. `UsersPage` covers all
-  four render states (loading, rows, empty, error), `ProtectedRoute` all four branches
+- ✅ **Component tests** — Vitest + Testing Library, **49 specs**. `UsersPage` covers what
+  only the page can answer — that the roster it fetched reaches the table, and that a
+  failed first load shows the message with no table at all — while `UsersTable` owns the
+  three bodies (skeleton, empty, rows) and, in all three, that every one of them spans
+  the **rendered** header count rather than a hardcoded 5, `ProtectedRoute` all four branches
   (loading, signed out, wrong role, allowed), `CreateUserForm` its validation, its
   payload, both failure messages, the invalidation, that it waits for the refetch
   before reporting success, and that the submit button will not take a second click
@@ -425,4 +475,4 @@ is what will make it start hurting; revisit when you hit it.
 | **`CardTitle` renders a `div`, not a heading.** Screen readers find no page headings; specs assert body copy instead of `getByRole("heading")`. | Any accessibility pass. | Render page titles as real headings, then switch those assertions over. |
 | **A sign-in that races a delete leaves a session Better Auth's own routes still honour.** `auth.ts` refuses the session, and `requireAuth` 401s it — but `index.ts` mounts `/api/auth/*` **above** `requireAuth`, so a session born in that window still gets 200 from `get-session` and can reach `change-password`, `update-user` and friends. The client then believes it is signed in while every app call 401s, and `LoginPage` bounces the interceptor's redirect back to `/`. | Any evidence it has actually happened, or a second place that creates sessions. | The window is already narrowed twice (a post-commit session sweep, and the guard in `requireAuth`). Closing it needs a check inside Better Auth's own request path — its `admin` plugin's `banned` field is the mechanism that does this, so adopting that plugin is the real fix and a bigger decision than this feature was. |
 | **`forget-password` would mail a deleted user a working reset link.** The route reads the user by address and nothing there consults `deletedAt`. Harmless today: `emailAndPassword.sendResetPassword` is not configured, so the route cannot do anything. | The day password reset is turned on. | Add the same `deletedAt` check to that path, or move the check into a place every Better Auth route crosses. |
-| **The suite is top-heavy** — 89 specs at the E2E layer (40 of them API-level), 48 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |
+| **The suite is top-heavy** — 89 specs at the E2E layer (40 of them API-level), 49 component specs, no unit tests. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and server-side unit tests once there is pure logic to isolate. Don't let E2E keep absorbing work the faster layers should carry. |

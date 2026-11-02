@@ -9,13 +9,12 @@ import UsersPage from "@/pages/UsersPage";
 
 // UsersPage reaches the server through this module, so a fake takes its place:
 // the test, not a running API, decides what comes back. That is what buys the
-// two states below that no real server hands over on request — an empty roster
-// and an outright failure. `post` and `patch` are here because the page renders
-// CreateUserDialog and one EditUserDialog per row, whose forms reach the same
-// module — no test below triggers either, but a fake should describe what the
-// subtree can call.
+// failure below that no real server hands over on request. `post` and `patch`
+// are here because the page renders CreateUserDialog and one EditUserDialog per
+// row, whose forms reach the same module — no test below triggers either, but a
+// fake should describe what the subtree can call.
 vi.mock("@/lib/api", () => ({
-  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
 }));
 
 // NavBar renders inside UsersPage and asks this module who is signed in. The
@@ -26,15 +25,6 @@ vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { name: "Admin", role: "admin" } } }),
   signOut: vi.fn(),
 }));
-
-const ADMIN: UserRow = {
-  id: "u1",
-  name: "Admin",
-  email: "admin@test.local",
-  role: "admin",
-  createdAt: "2026-01-15T00:00:00.000Z",
-  deletedAt: null,
-};
 
 const AGENT: UserRow = {
   id: "u2",
@@ -72,47 +62,26 @@ function renderUsersPage() {
   );
 }
 
+// What the table decides — the loading shape, the empty row, the column count —
+// is asserted in UsersTable.test.tsx, with props instead of a faked request.
+// What is left here is what only the page can answer: that the roster it
+// fetched reaches the table at all, and what it does with a failure.
 describe("UsersPage", () => {
   beforeEach(() => {
     vi.mocked(api.get).mockReset();
   });
 
-  it("holds the table's shape with placeholder rows while loading", () => {
-    // A request that never settles, so the pending state stays on screen.
-    vi.mocked(api.get).mockReturnValue(new Promise<AxiosResponse>(() => {}));
+  it("hands the roster it fetched to the table", async () => {
+    respondWith([AGENT]);
 
     renderUsersPage();
 
-    // One header row plus three skeleton rows. The header is deliberately real
-    // during loading, so arriving data replaces the placeholders in place
-    // instead of shifting the layout.
-    expect(screen.getAllByRole("row")).toHaveLength(4);
-    expect(screen.queryByRole("cell", { name: ADMIN.email })).toBeNull();
+    // Proves the whole chain: useUsers → the page's props → UsersTable → a row.
+    expect(await screen.findByRole("cell", { name: AGENT.email })).toBeVisible();
+    expect(screen.getByRole("cell", { name: AGENT.role })).toBeVisible();
   });
 
-  it("renders one row per user once the roster arrives", async () => {
-    respondWith([ADMIN, AGENT]);
-
-    renderUsersPage();
-
-    expect(await screen.findByRole("cell", { name: ADMIN.email })).toBeVisible();
-    expect(screen.getByRole("cell", { name: AGENT.email })).toBeVisible();
-    expect(screen.getByRole("cell", { name: ADMIN.role })).toBeVisible();
-    // Header plus the two users, so the placeholder rows are gone.
-    expect(screen.getAllByRole("row")).toHaveLength(3);
-  });
-
-  // Unreachable from E2E: the seed always creates two accounts, so the real
-  // test database is never empty.
-  it("says so when the roster comes back empty", async () => {
-    respondWith([]);
-
-    renderUsersPage();
-
-    expect(await screen.findByText("No users found.")).toBeVisible();
-  });
-
-  // Also unreachable from E2E without breaking the server on purpose.
+  // Unreachable from E2E without breaking the server on purpose.
   it("surfaces the message when the request fails", async () => {
     vi.mocked(api.get).mockRejectedValue(
       new Error("Request failed with status code 403"),

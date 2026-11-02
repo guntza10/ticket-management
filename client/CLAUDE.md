@@ -169,10 +169,26 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - **A soft-deleted row is shown, not hidden.** `GET /api/users` returns it on purpose,
   so `UsersTableRow` renders it muted with a `Deleted` badge **inside the name cell**
   and no action buttons. The badge gets no column of its own: a column means a header
-  cell, a sixth skeleton cell, a `colSpan` bump and new counts in the test, all to say
-  something only some rows need to say. Note the cost it does have — the badge makes
+  cell, a sixth skeleton cell and a `colSpan` bump, all to say something only some rows
+  need to say. Note the cost it does have — the badge makes
   that cell's accessible name read `"Some Name Deleted"`, so specs locate a row by its
   **email** cell instead.
+  - **That list used to end "and new counts in the test", which was false** until
+    2026-11-02: every test counted `row`, never `cell`, so a sixth header with no
+    sixth cell went green. The sentence was worse than wrong — it told the next reader
+    a mistake would be caught. `UsersTable.test.tsx` now makes it true, and it is true
+    the only way that lasts: **the three assertions compare against the rendered
+    `columnheader` count rather than against `5`**, so they follow a column that is
+    genuinely added and fail one that is half-added. Adding a `<TableHead>` with
+    nothing else turns all three red.
+- **The table is its own component, and the reason is that agreement.**
+  `UsersTable` holds the headers, the empty row's `colSpan` and the skeleton cells —
+  everything that has to agree on how many columns there are — while `UsersTableRow`
+  holds the data cells. Those first three lived in `UsersPage` until 2026-11-02, so a
+  new column meant editing two files with nothing saying when one was forgotten. It
+  takes `users` and `isPending` as **props** rather than calling `useUsers()` itself:
+  the page shows `error` above the Card, so it has to call the hook anyway, and the
+  props are what let the three bodies be reached from a test with no faked request.
   The delete button is also hidden on **admin** rows. That is the UI half of a rule the
   server enforces with `403 admin_not_deletable`; hiding it is courtesy, the refusal is
   what counts — the same split as the admin-only NavLink.
@@ -303,7 +319,7 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - `src/pages/` — route pages (`LoginPage`, `HomePage`, `UsersPage`)
 - `src/features/<domain>/` — everything that only one domain uses, e.g.
   `features/users/components/` (`CreateUserDialog`, `CreateUserForm`,
-  `EditUserDialog`, `EditUserForm`, `DeleteUserDialog`, `UsersTableRow`)
+  `EditUserDialog`, `EditUserForm`, `DeleteUserDialog`, `UsersTable`, `UsersTableRow`)
 - `src/components/` — components **two or more** features or pages use
   (`NavBar`, `ProtectedRoute`, `ErrorDialog`, `PasswordInput`);
   `src/components/ui/` — shadcn (generated)
