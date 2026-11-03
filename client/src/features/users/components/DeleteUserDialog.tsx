@@ -33,10 +33,15 @@ export default function DeleteUserDialog({ user }: { user: DeletableUser }) {
       await mutateAsync();
       setOpen(false);
     } catch {
-      // Close this one *first*. There is no field for "the delete failed" to
-      // land on, so it goes to ErrorDialog — and two Radix portals open at once
-      // fight over a single focus trap, which is a real bug rather than a
-      // cosmetic one.
+      // Close this one too, in the same batch. There is no field for "the
+      // delete failed" to land on, so it goes to ErrorDialog — and two Radix
+      // portals open at once fight over a single focus trap, which is a real
+      // bug rather than a cosmetic one.
+      //
+      // The order of these two lines does *not* matter, and this comment used
+      // to say it did: React batches both setState calls into one re-render,
+      // so there is no frame in which both dialogs are mounted either way. What
+      // would break is an `await` between them, or closing not at all.
       setOpen(false);
       setError("Could not delete the user. Please try again.");
     }

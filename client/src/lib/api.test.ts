@@ -47,8 +47,17 @@ describe("the api instance", () => {
 
     // An agent reaching an admin-only route gets this. It means "signed in,
     // not allowed" — sending them to a login page would answer a question
-    // nobody asked, and `route-protection.spec.ts` depends on the 403 arriving
-    // intact.
+    // nobody asked, and would bounce straight back off ProtectedRoute, which
+    // can see they are signed in.
+    //
+    // This spec is the only thing that catches it, which was measured rather
+    // than assumed: widening the interceptor to `401 || 403` leaves all 89 E2E
+    // specs green. The API-level ones use Playwright's `request` fixture, so
+    // they never travel through this axios instance at all, and
+    // `route-protection.spec.ts` — which an earlier version of this comment
+    // claimed depended on the 403 — never produces one, because
+    // `ProtectedRoute` sends an agent off /users before UsersPage mounts and
+    // `useUsers` can fire.
     expect(replace).not.toHaveBeenCalled();
   });
 
