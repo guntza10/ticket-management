@@ -33,6 +33,12 @@ Current specs:
   the refused re-sign-in, the protected admin, and the idempotent re-delete
 - `delete-user.spec.ts` — the trash can asks first: confirming badges the row without a
   reload, cancelling leaves it alone, and a deleted user's own open session stops working
+- `session-expiry.spec.ts` — the 401 interceptor in `client/src/lib/api.ts`, wired up: an
+  admin's session is cleared out from under a loaded `/users`, and the next click that
+  reaches the API lands them on `/login`. Deliberately no `reload()` — that path goes
+  through `ProtectedRoute` and `delete-user.spec.ts` already covers it. It has to be an
+  admin: every axios call in the client targets the admin-only `/api/users`, so an
+  agent's clicks only ever produce a 403, which the interceptor must leave alone
 
 The `trustedOrigins` tests only work because `server/src/auth.ts` sets
 `advanced: { disableOriginCheck: false }`. Better Auth otherwise defaults that check

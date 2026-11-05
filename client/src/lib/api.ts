@@ -17,11 +17,10 @@ export const api = axios.create({
   withCredentials: true,
 });
 
-// A session that is gone — expired, signed out in another tab, or belonging to
-// a user an admin has just deleted — answers 401 to everything. Without this,
-// the page stays on screen and every click produces an error with no
-// explanation, which reads as the app being broken rather than as being signed
-// out.
+// A session that is gone — expired, or signed out in another tab — answers 401
+// to everything. Without this, the page stays on screen and every click
+// produces an error with no explanation, which reads as the app being broken
+// rather than as being signed out.
 //
 // Better Auth already handles the half it can see: its session store refetches
 // on window focus and nulls itself on a 401, so ProtectedRoute sends the
@@ -29,6 +28,13 @@ export const api = axios.create({
 // *this* instance — calls to our own /api/users never pass through Better
 // Auth, so nothing there learns that the server refused one. That gap is the
 // only reason this exists.
+//
+// Note which 401 can actually arrive here today: every call through this
+// instance goes to the admin-only /api/users, so a *deleted* user never reaches
+// one — an agent's clicks produce 403, and an admin cannot be soft-deleted at
+// all. An earlier version of this comment listed that case anyway. It becomes
+// real with the tickets domain, which gives an agent endpoints of their own.
+// `e2e/session-expiry.spec.ts` drives the reachable case in a browser.
 api.interceptors.response.use(undefined, (error: unknown) => {
   // 401 only. An agent reaching an admin-only route gets 403, which has to
   // reach the caller untouched — it means "signed in, not allowed", and
