@@ -23,9 +23,14 @@ these are the facts you can rely on:
 - The run uses the **`ticket_management_test`** database (`server/.env.test`), never the
   dev one. Both stay on Postgres at localhost:5433, which must already be running — if
   it isn't, say so and stop; you cannot start it (it needs sudo).
-- Seeded admin: **`admin@test.local` / `password1234`**. If a flow needs a user that
-  doesn't exist yet (e.g. an `agent`-role account), say so and propose the seed change —
-  don't silently create users from inside a test unless the flow is about creating them.
+- **Two accounts are seeded**, both `password1234`: **`admin@test.local`** and
+  **`agent@test.local`** — role-gating needs a non-admin seat, so one exists. (The *dev*
+  database seeds `@example.com` addresses instead; don't reach for those here.)
+  `e2e/support/auth.ts` exports them as `ADMIN` and `AGENT` — import those rather than
+  retyping the strings. A flow needing some *other* user creates it with
+  `createUserViaApi` from `e2e/support/users.ts`, which takes its address from
+  `newUserEmail()`; never rename or delete a seeded account, because every other spec
+  in the run depends on it.
 
 Commands you may run:
 
@@ -92,8 +97,10 @@ page.getByRole("heading", { name: "Tickets" })
 - Shared setup goes in `test.beforeEach`, not in a test that happens to run first.
 - Anything a test creates, it should be able to tolerate finding again on a re-run —
   prefer unique values (a subject line with an index) over assuming an empty table.
-- There is **no automatic DB reset between runs yet**. If a flow genuinely needs a clean
-  database, don't invent one — flag it and propose adding `globalSetup` to the config.
+- **The database does reset itself.** `e2e/global-setup.ts` migrates, truncates and
+  re-seeds before every run, so a run always starts from those two accounts and rows
+  never accumulate. You still cannot assume an *empty* table — five workers share one
+  database for the length of a run, so never assert a roster length, count or order.
 
 ## Hard boundaries
 
