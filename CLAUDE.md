@@ -382,6 +382,44 @@ testing without HTTP shows up.
 - Branch: `main`. Commits follow **Conventional Commits**: `type: imperative subject` (≤50 chars, no trailing period), a blank line, then a body wrapped at ~72 cols explaining *why*. Types in use: `feat`, `fix`, `docs`, `chore`, `build`, `refactor`, `test`. End the body with the `Co-Authored-By` trailer.
 - Keep the CLAUDE.md files current. Add a convention when it becomes real (not speculative), and **correct one in the same commit that makes it wrong** — a file still documenting a pattern the code no longer uses is worse than one that never mentioned it, because it actively instructs the next reader. Put workspace-specific rules in the workspace file, shared rules here.
 
+### The loop for one unit of work
+
+**Scoped to this repo on purpose.** This is one AI-coding workflow being tried, not a
+house standard — the next project is meant to try a different one. That is why it lives
+here and not in `Practice/CLAUDE.md`, which every project inherits, and why it does not
+go into `_setup-kit/` until a second project has actually used it.
+
+1. **Plan mode → review the plan → implement.** Shape is settled here.
+2. **Smoke pass (the user).** Drive the happy path once by hand in a real browser, ~2
+   minutes. One line, no edge cases. This is a **gate, not a test**: `e2e-tester` cannot
+   tell a spec that went red from its own locator from one that went red because the page
+   is broken, so a page that does not render yet costs it several boot-a-browser rounds to
+   rediscover what a single click would have shown.
+3. **Review list (Claude writes, the user reads the code).** Ordered the way the code
+   connects — schema → endpoint → auth → client — saying per file whether to read the
+   whole thing or only the diff, flagging anything done differently from what was agreed,
+   and splitting proven from assumed. Whatever it turns up is applied before step 4 starts.
+4. **Tests, reviewers, docs — one block (Claude).** The tests **Which test a change
+   needs** calls for, each one proven able to fail; then `clean-code-reviewer`, plus
+   `security-reviewer` when the change touched auth or an endpoint; then any CLAUDE.md
+   line this work has just made wrong. Ends with a short summary of what each test covers.
+5. **Recheck, then commit (the user).** Drive the app properly now that the code is
+   stable, and say when to commit.
+
+**Why the code review comes before the tests.** The review is the cheap filter and a spec
+is the expensive, brittle artifact: feedback that changes an endpoint's field set or
+renames a component invalidates every spec asserting the old shape. It is the same reason
+step 2 sits where it does. Worth recording because the first version of this section
+argued the opposite — it put tests first so the one list could carry test summaries, which
+traded the ordering away for something step 4 can hand over by itself.
+
+**So the review arrives in two pieces, by request:** the ordered code list at step 3, the
+test-coverage summary at step 4. One list holding both cannot exist before the tests do,
+and waiting for them is what pushed the code review too late.
+
+**A "shape check" is not a step of its own.** Reading what was created and where it was
+put is the first thing step 3's ordering hands you.
+
 ## Status
 
 - ✅ **Phase 1** — monorepo skeleton; client + server run.
