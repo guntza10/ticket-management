@@ -40,5 +40,56 @@
       "warn",
       { "max": 300, "skipComments": true, "skipBlankLines": true }
     ]
-  }
+  },
+  // Import direction, enforced. `index.ts` may import a module; a module may
+  // import the shared files at `src/` root and `core/`; the shared files may
+  // import neither. oxlint has no `import/no-restricted-paths`, so each zone is
+  // an override that forbids the imports pointing the wrong way.
+  //
+  // Only two of the three zones are expressible — see **Module layout** in
+  // CLAUDE.md for the third and why it stays prose.
+  "overrides": [
+    {
+      // The shared layer is the bottom: db.ts, auth.ts, config.ts and the
+      // require-* guards cannot know who uses them.
+      //
+      // The module folders are named rather than globbed as `./*/**`, because
+      // `db.ts` legitimately imports `./generated/prisma/client.ts` and that
+      // glob would catch it. Cost of being explicit: a new module has to be
+      // added here. excludeFiles exempts index.ts, where importing a router is
+      // the wiring this file exists to do.
+      "files": ["src/*.ts"],
+      "excludeFiles": ["src/index.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["./users/**", "./tickets/**"],
+                "message": "Shared code at src/ root may not import a module. If a module needs this, it belongs here; if this needs a module, it is not shared."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // A module may not reach up into the wiring that mounts it.
+      "files": ["src/*/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/index.ts"],
+                "message": "A module may not import src/index.ts — that is the layer above. Anything you need from it moves down to src/ root."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

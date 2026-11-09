@@ -74,10 +74,23 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
   has no `import/no-restricted-paths` and the server's imports are all relative, so a
   glob cannot tell a sideways `../tickets/create-ticket.ts` from a legitimate
   `../generated/prisma/client.ts` — and with one module there is no second name to
-  forbid. Two of the three zones *are* expressible today (shared root must not import
-  `./*/**`; a module must not import `../index.ts`); whether to spell those now, wait
-  for `tickets/`, or give the server a path alias via Node's `imports` field is an open
-  decision — ask before picking one.
+  forbid. **Decided 2026-11-08, when `tickets/` arrived: the two expressible zones are
+  spelled as `no-restricted-imports` overrides in `.oxlintrc.json`,** and the third stays
+  prose. A Node `imports` alias was rejected — its targets must resolve *inside* the
+  package and `core/` is deliberately a sibling outside `server/`, so the three-`../`
+  import most likely to be mis-spelled could not be aliased at all: a repo-wide rewrite
+  that leaves the riskiest spelling untouched.
+  - Zone 1 names the module folders rather than globbing `./*/**`, because `db.ts`
+    legitimately imports `./generated/prisma/client.ts`. It carries
+    `excludeFiles: ["src/index.ts"]`, since `index.ts` importing a router *is* the
+    wiring. Adding a module means adding its name here — the one maintenance cost.
+  - Zone 2 stops a module importing `index.ts`.
+  - **Zone 3 — one module may not import another — is still only this paragraph.** The
+    glob that catches `../users/create-user.ts` from `src/tickets/` is `../*/**`, and
+    `*` matches `..`, so it also catches the legitimate `../../../core/schemas/users.ts`
+    (the client proved exactly this). The concrete temptation to resist is `tickets/`
+    reaching for `users/create-user.ts`; the answer is to move what it needs down to
+    `src/` root. Checked by hand with `grep -rn "\.\./users/" server/src/tickets/`.
 - **The path prefix lives at the mount**, so `app.use("/api/users", usersRouter)` pairs
   with `router.get("/")`. A rename then touches one line instead of every route.
 - **Guards go on the router when the whole resource shares them.** `users.routes.ts`
