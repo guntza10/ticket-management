@@ -39,6 +39,13 @@ Current specs:
   through `ProtectedRoute` and `delete-user.spec.ts` already covers it. It has to be an
   admin: every axios call in the client targets the admin-only `/api/users`, so an
   agent's clicks only ever produce a 403, which the interceptor must leave alone
+- `webhook-inbound-email.spec.ts` — `POST /api/webhooks/inbound-email`, the one route
+  in the app that is **not** called by a person: who may post mail (the shared secret in
+  a header, and a 401 when it is only in the query string), what a malformed email is
+  refused for, the field set of the ticket it creates together with the three fields a
+  body cannot set, and the duplicate guard — a `Re:`/`Fwd:`/stacked-prefix follow-up
+  answers 200 with the ticket that already exists, while the same subject sent twice
+  *without* a reply prefix is two tickets. The only specs here that never sign in
 
 The `trustedOrigins` tests only work because `server/src/auth.ts` sets
 `advanced: { disableOriginCheck: false }`. Better Auth otherwise defaults that check
@@ -50,6 +57,14 @@ silently absent and untestable. Don't remove that line.
 over HTTP (`createUserViaApi`), and holds `ALLOWED_FIELDS`, the key set both
 `users-api.spec.ts` and `users-api-edit.spec.ts` assert on. Neither is a
 spec, so Playwright does not collect them.
+
+`support/inbound-email.ts` does the same job for the webhook: `postInboundEmail` posts
+one email (with the secret, with a wrong one, or with none), `validEmail` builds a
+complete body to spread and override, `newSubject`/`newSenderEmail` make both halves of
+the duplicate guard's match unique per spec, and `ALLOWED_TICKET_FIELDS` is the key set
+every answer is checked against. It **spells the test secret out** rather than importing
+what the server reads — same reason `ALLOWED_FIELDS` is hand-written: a spec that reads
+the value under test can never notice that value being wrong.
 
 `global-setup.ts` migrates, truncates, then re-seeds `ticket_management_test` before
 every run. Without it each sign-in left a session row behind for good, and anything
@@ -67,6 +82,10 @@ bearing:
 2. Never assert a roster length, a row count or an ordering. Assert that the rows you
    care about are present — `users-api.spec.ts` uses `expect.arrayContaining` and a
    per-row key-set loop for exactly this reason.
+3. Prove identity by comparing ids, never by counting. The webhook specs are the ones
+   that forced this: "the follow-up joined the ticket I just made" is
+   `second.id === first.id`, and "these are two tickets" is `not.toBe`. Both survive
+   another worker inserting rows mid-test; `expect(tickets).toHaveLength(2)` would not.
 
 ## Running
 

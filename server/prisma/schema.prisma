@@ -10,17 +10,76 @@ datasource db {
   provider = "postgresql"
 }
 
-// First model — a minimal, standalone Ticket to prove the pipe end-to-end.
-// Relations to User/Agent and richer fields are added in later phases.
+// Hand-managed Postgres enums, same as Role below. Members are lowercase
+// because that is what every other layer already writes: the `prisma-client`
+// generator emits a const object of string literals (src/generated/prisma/
+// enums.ts), `erasableSyntaxOnly` forbids a TypeScript enum to hide them
+// behind, and the guards already compare role as a literal. The sentence a
+// person reads ("General Question") is presentation and lives on the client.
+//
+// No @@map on either: Role has none, so its Postgres type name is literally
+// "Role", and a lone snake_cased type beside it would read as a rule.
+//
+// Three statuses, not five. The course's finished app also has `new` and
+// `processing`, but those are states its AI pipeline moves a ticket through
+// and they arrive with that pipeline, not here.
+enum TicketStatus {
+  open
+  resolved
+  closed
+}
 
+enum TicketCategory {
+  general_question
+  technical_question
+  refund_request
+}
+
+// The ticket a customer's email becomes. Until a mail provider is wired up,
+// POST /api/webhooks/inbound-email is called by our own specs and by curl with
+// the same JSON body a provider adapter will later hand it.
 model Ticket {
-  id        Int      @id @default(autoincrement())
-  subject   String
-  body      String
-  status    String   @default("open")
+  id       Int     @id @default(autoincrement())
+  subject  String
+  body     String
+  bodyHtml String?
+
+  status TicketStatus @default(open)
+
+  // Nullable because the sender never picks one — a classifier fills it in a
+  // later phase. A default would file every ticket as a general question and
+  // make "nobody has categorised this yet" unaskable.
+  category TicketCategory?
+
+  // The person who wrote in. Plain columns, not a relation: a customer never
+  // signs in, so there is no row anywhere to point at. Both come off the
+  // From header once a provider is parsing real mail.
+  senderName  String
+  senderEmail String
+
+  // Null is the shared pool — nobody has picked it up. Nothing writes it yet;
+  // assignment is its own endpoint in a later phase, so a created ticket
+  // always lands here as null.
+  //
+  // No onDelete, and that is deliberate rather than forgotten: with every
+  // foreign-key field optional, Prisma's default already *is* SetNull, which
+  // is what this relation wants — the ticket has to survive an agent leaving,
+  // unassigned. Contrast Session.userId, which is required, so its default
+  // would be Restrict and `onDelete: Cascade` had to be written out.
+  assignedToId String?
+  assignedTo   User?  @relation(fields: [assignedToId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // No indexes. The duplicate guard behind the webhook filters on
+  // senderEmail + subject + status, so by the letter of the rule on
+  // User.deletedAt one is now due — but status and category hold three values
+  // each across a table measured in dozens of rows, so either index matches
+  // most of the table and Postgres reads the table anyway while still costing
+  // every insert. senderEmail is the one with real selectivity and therefore
+  // the first that should get an index; the trigger is a measured slow query
+  // (EXPLAIN showing the seq scan dominating), not the appearance of a WHERE.
   @@map("ticket")
 }
 
@@ -44,10 +103,19 @@ model User {
   // so the roster can keep showing who used to be here. Null means active.
   //
   // No index on purpose — GET /api/users deliberately does not filter on it, so
-  // there is nothing to speed up. Add one only if a query starts filtering.
+  // there is nothing to speed up. Add one only once a query filters on it *and*
+  // that filter cuts most rows away: "a query filters on it" is the test this
+  // comment used to state, and it is one step short. Ticket's duplicate guard
+  // now filters on status, which matches nearly every row, so an index there
+  // would be paid for on every insert and declined by the planner.
   deletedAt     DateTime?
   sessions      Session[]
   accounts      Account[]
+  // Tickets this agent has been picked for. A relation field, so it adds no
+  // column to `user` and the migration does not touch this table — and it
+  // cannot widen any /api/users answer either, because all four verbs select
+  // PUBLIC_USER_FIELDS rather than every column.
+  assignedTickets Ticket[]
 
   // Left as a plain unique on purpose, not made partial. A soft-deleted row
   // keeps occupying its address, so re-creating it answers 409 — decided, not

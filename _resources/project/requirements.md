@@ -104,6 +104,30 @@ Resolved
 **Session** — created/managed by the session store (e.g. `connect-pg-simple`),
 not hand-modeled.
 
+
+> **[ours] Reconciled with the course's actual schema — 2026-11-08.** The block above was
+> written before any ticket code existed, and §3's own header says to reconcile it. What
+> shipped differs:
+>
+> - **`customerEmail` is two columns, `senderName` + `senderEmail`.** An email carries a
+>   display name as well as an address, and both come off the From header.
+> - **`bodyHtml` exists** (nullable) — real mail has an HTML part.
+> - **`assignedAgentId` is named `assignedToId`**, with a nullable `assignedTo` relation
+>   to `User`. No `onDelete` is written: with the foreign key optional, Prisma's default
+>   already *is* `SetNull`, which is what an unassigned-but-surviving ticket wants.
+> - **`category` is nullable.** Nobody picks one at intake — the sender cannot, and the
+>   classifier is Phase 5. A default would file everything as a general question and make
+>   "uncategorised" unaskable.
+> - **`status` members are lowercase** (`open` / `resolved` / `closed`), matching the
+>   `Role` enum and the Postgres type. The display-cased names above are labels, and
+>   labels belong on the client. The finished reference app adds `new` and `processing`;
+>   they arrive with the AI pipeline that moves tickets through them.
+> - **`aiSummary` / `suggestedReply` are not built** (Phase 5), and **`Reply` does not
+>   exist yet** — which is why a follow-up email the duplicate guard matches is currently
+>   discarded. It arrives in Phase 6 along with `messageId` and real threading.
+> - **Reopen (§"Notes" above) is still deferred.** The guard only matches tickets whose
+>   status is `open`, so a reply to a resolved ticket creates a new one.
+
 Notes:
 - `status` and `category` map to Prisma **enums**.
 - The `Reply` model keeps conversation history and supports email threading in

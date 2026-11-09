@@ -11,7 +11,11 @@ resolve tickets; admins additionally manage agent accounts and roles. Monorepo v
 ## Domain
 
 - **Roles:** `admin` (manage users + everything an agent can do) · `agent` (work tickets).
-- **Core entities:** User, Ticket (status `open`/`resolved`/`closed`, a category, an assigned agent), Category.
+- **Core entities:** User, Ticket (status `open`/`resolved`/`closed`, a nullable category, an
+  assigned agent). **A category is a Postgres enum on the ticket, not a table** —
+  `general_question` / `technical_question` / `refund_request`. This line promised a
+  `Category` entity until 2026-11-08; the reference project has no such table and
+  `_resources/project/requirements.md` always said enum.
 - **Later phases:** a knowledge base and AI features (auto-classify category, summarize a ticket, suggest a reply — agent reviews before sending).
 
 ## Tech stack
@@ -459,8 +463,8 @@ put is the first thing step 3's ordering hands you.
   the browser to `/login`. The course's reference project stops after the first, which
   leaves a deleted user able to sign in and then fail on everything.
 - ✅ **E2E** — Playwright against a dedicated `ticket_management_test` DB and test ports;
-  **90 specs** — the auth system end to end (sign-in, validation, route protection,
-  session lifecycle, cookie/CORS/CSRF properties) plus **40 API-level specs** that skip
+  **108 specs** — the auth system end to end (sign-in, validation, route protection,
+  session lifecycle, cookie/CORS/CSRF properties) plus **58 API-level specs** that skip
   the browser and call the server directly, covering `/api/users` on all four verbs:
   who may read, create, edit and delete, the field allow-list on every answer, and what
   each one refuses. Three of those settle things only a real sign-in can: an edit
@@ -494,7 +498,23 @@ put is the first thing step 3's ordering hands you.
   roster, fail on request, or reject a sign-out on demand, the loading states are
   gone before an assertion can land on them, and a request can only be held unanswered
   where the client is the one answering it.
-- ⏭️ **Next** — Phase 3 is complete; the tickets domain is next (schema + API + UI).
+- ✅ **Tickets — inbound webhook** — the `Ticket` model (`open`/`resolved`/`closed`,
+  a nullable `TicketCategory`, `senderName`/`senderEmail`, `bodyHtml`, a nullable
+  `assignedTo` relation) and **`POST /api/webhooks/inbound-email`**, the one route in the
+  app not called by a person. It is guarded by `requireWebhookSecret` — a shared secret
+  in the `x-webhook-secret` header, compared with `timingSafeEqual`, read at module load
+  so a missing `WEBHOOK_SECRET` refuses to start — because `requireAuth` asks "is there a
+  session?", which a mail provider can never answer. A **duplicate guard**, not threading:
+  a `Re:`/`Fwd:` follow-up from the same sender on the same subject answers `200` with the
+  ticket that already exists. It fires **only** when the subject claims to be a reply,
+  which is where it leaves the reference project: that one matches any subject, so two
+  unrelated emails titled "Help" collapse into one ticket and the second body is written
+  nowhere. 18 API specs, every one proven to fail.
+  Deliberately absent: a `Reply` model, `GET`/`PATCH /api/tickets`, any UI, a mail
+  provider (the body is plain JSON, which is what the reference project's own step does),
+  and `messageId` — no caller sends one yet.
+- ⏭️ **Next** — `GET /api/tickets` (then sorting, filtering, pagination, the detail page,
+  assignment), following the reference project's commit order.
 
 ## Known gaps — deliberately deferred
 
@@ -504,7 +524,7 @@ is what will make it start hurting; revisit when you hit it.
 | Gap | Trigger | What to do |
 | --- | --- | --- |
 | **Specs run 5-way parallel against one shared test DB,** and `globalSetup` truncates once per run rather than per spec — so a row one worker creates is visible to every other. | **Already fired**, with create-user. | Resolved without `workers: 1`: every created row takes its address from `newUserEmail()` in `e2e/support/users.ts` (a UUID — five workers can share a millisecond), and no spec asserts a roster length, count or order. Keep both rules when adding specs that write. |
-| **`POST /api/users` has no rate limit.** Better Auth's limiter covers `/api/auth/*` only, so nothing throttles account creation. Low risk while the route is admin-only and sign-up is disabled. | A second admin-reachable write endpoint, or any sign that an admin session could be hijacked. | Put a limiter in front of the app's own mutating routes rather than bolting one onto this endpoint. |
+| **The app's own mutating routes have no rate limit.** Better Auth's limiter covers `/api/auth/*` only, so nothing throttles `POST /api/users` or `POST /api/webhooks/inbound-email`. | **Already fired, and wider than this row used to say.** It read "a second admin-reachable write endpoint"; the webhook is a second mutating endpoint reachable with **no session at all**, only a shared secret — so anyone holding that secret can create tickets without limit. | Still the same answer: a limiter in front of the app's own mutating routes rather than bolted onto one endpoint. Do it when the webhook is exposed to the internet, which is the same moment a real mail provider is wired up. |
 | **`GET /api/users` returns every user, unpaginated.** Fine at three rows. | A real agent roster (dozens+), or a page that has to scroll forever. | Add `take`/`skip` (or cursor) + a total count, and paginate the table. |
 | **No catch-all route.** `App.tsx` has `/login`, `/`, `/users` and nothing else, so an unknown URL renders a blank page. | Anyone mistyping a URL; more so once there are more routes. | Add a `*` route with a 404 page, then a spec for it. |
 | **No "return to intended page" after sign-in.** A signed-out visit to `/users` lands on `/` after login, not `/users`. | Deep links being shared, or any flow that sends users to a specific page. | Have `ProtectedRoute` record the attempted path and `LoginPage` honour it. |
@@ -514,4 +534,8 @@ is what will make it start hurting; revisit when you hit it.
 | **A sign-in that races a delete leaves a session Better Auth's own routes still honour.** `auth.ts` refuses the session, and `requireAuth` 401s it — but `index.ts` mounts `/api/auth/*` **above** `requireAuth`, so a session born in that window still gets 200 from `get-session` and can reach `change-password`, `update-user` and friends. The client then believes it is signed in while every app call 401s, and `LoginPage` bounces the interceptor's redirect back to `/`. | Any evidence it has actually happened, or a second place that creates sessions. | The window is already narrowed twice (a post-commit session sweep, and the guard in `requireAuth`). Closing it needs a check inside Better Auth's own request path — its `admin` plugin's `banned` field is the mechanism that does this, so adopting that plugin is the real fix and a bigger decision than this feature was. |
 | **`forget-password` would mail a deleted user a working reset link.** The route reads the user by address and nothing there consults `deletedAt`. Harmless today: `emailAndPassword.sendResetPassword` is not configured, so the route cannot do anything. | The day password reset is turned on. | Add the same `deletedAt` check to that path, or move the check into a place every Better Auth route crosses. |
 | **`security.spec.ts`'s "accepts the very same sign-in from the trusted origin" has flaked once.** Seen in one full run of three on 2026-11-05; 40/40 green across four repeats of that file alone, so it is load-dependent rather than a logic fault — most likely several workers' sign-ins hashing at once, since Argon2 is deliberately slow. | A second sighting, or any other sign-in spec joining it. | Capture the failure message before theorising — this row records a symptom, not a diagnosis. Raising that spec's timeout would hide it rather than answer it. |
-| **The suite is top-heavy** — 90 specs at the E2E layer (40 of them API-level), 49 component specs, and nothing that runs server code without going through HTTP. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and, once there is server logic worth isolating (status transitions are the first), a test runner in `server/` so it can be reached without HTTP. **Say "runs without HTTP", not "unit test":** that row used to read "no unit tests" while 49 component specs existed, which reads as having none at all. The axis that matters is what a test has to boot, not what it is called. |
+| **The suite is top-heavy** — 108 specs at the E2E layer (58 of them API-level), 49 component specs, and nothing that runs server code without going through HTTP. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | The tickets domain, which brings rules worth testing in isolation (status transitions, assignment) and many more UI states. | Push new coverage downward — component tests for new UI states, API specs for new endpoints, and, once there is server logic worth isolating (status transitions are the first), a test runner in `server/` so it can be reached without HTTP. **Say "runs without HTTP", not "unit test":** that row used to read "no unit tests" while 49 component specs existed, which reads as having none at all. The axis that matters is what a test has to boot, not what it is called. |
+| **A follow-up email that the duplicate guard matches is thrown away.** `POST /api/webhooks/inbound-email` answers `200` with the existing ticket and writes nothing — there is no `Reply` model yet, so the customer's second message is stored nowhere. | Already real, and the reason the guard was narrowed to subjects starting `Re:`/`Fwd:` rather than matching any subject the way the reference project does: that narrowing bounds the loss, it does not stop it. | Add the `Reply` model and append the follow-up to the ticket, which is what the reference project's own `Add the ability to receive emails` step does. |
+| **Threading is a subject heuristic, not RFC 5322.** The guard matches on `senderEmail` + the subject with `Re:`/`Fwd:` stripped, so a localised prefix (`AW:`, `Antwort:`, `回复:`, `RE[2]:`), a `Fw:`, or a customer editing the subject all miss. | A mail provider being connected — at which point `Message-ID` / `In-Reply-To` / `References` actually start arriving (SendGrid Inbound Parse posts them in its `headers` field). | Store `messageId` (unique, which also makes a retried delivery idempotent) and match on `In-Reply-To`/`References` first, keeping the subject heuristic as a fallback. Not built now because nothing sends a message id to this endpoint yet. |
+| **A malformed inbound email answers `400`.** Correct for a caller that can fix the body; wrong for a mail provider, which will retry a permanently-invalid email and then drop it silently. | A real provider posting to this route. | Decide the webhook's semantics then: answer `2xx` for anything permanently unprocessable and record it, reserving non-2xx for "retry me". |
+| **A subject of only `Re:` stores an empty subject.** `subject` is validated non-empty *before* the prefix is stripped, so `"Re:"` passes and then normalises to `""`. | Anyone noticing a nameless ticket. | Fall back to the untrimmed subject when stripping empties it — with a spec, since the current behaviour has none. |

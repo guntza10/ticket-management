@@ -45,8 +45,20 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
 - **An API resource is a folder, not a layer.** Everything about `/api/users` — its
   router and the logic behind it — lives in `src/users/`. The alternative (a `routes/`
   folder beside a `services/` folder) scatters one feature across several directories,
-  which is felt the moment a change touches more than the route. Tickets and categories
-  follow the same shape.
+  which is felt the moment a change touches more than the route. `src/tickets/` follows
+  the same shape.
+  - **The folder follows the resource; the URL follows the caller.** The inbound-email
+    webhook is mounted at `/api/webhooks/inbound-email` but lives in
+    `src/tickets/inbound-email.routes.ts`, because a ticket is what it writes. A
+    `src/webhooks/` folder would have had to import `src/tickets/` on its first day,
+    which the import rule below forbids outright — so the mismatch between folder and
+    URL is the rule working, not a slip. The reference project puts it in
+    `src/routes/webhooks.ts`, which it can because it has no such rule.
+  - **`src/tickets/` is one file on purpose.** No `create-ticket.ts`: `create-user.ts`
+    earned its own file because `prisma/seed.ts` is a second caller, and nothing is a
+    second caller here. Split the pure helpers (`stripSubjectPrefixes`, the
+    duplicate-guard decision) out the day `server/` gets a test runner, because that is
+    the day a test could aim at them without HTTP.
 - **`index.ts` holds wiring, not routes:** middleware order, mounts, the error handler,
   `listen`. The only handlers left in it are `/api/me`, `/` and `/health` — `/api/me`
   moves the day auth gets a module of its own.
@@ -75,6 +87,30 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
   the individual route only when they genuinely differ between routes.
 
 ## Authorization
+
+### Two kinds of caller, two kinds of authentication
+
+`requireAuth` asks **"is there a session?"** — a question a mail provider can never
+answer, because it holds no cookie and never will. So `/api/webhooks/inbound-email` is
+guarded by **`require-webhook-secret.ts`** instead, which asks the only question that
+applies to a machine: *do you know the secret we share with it?* Same resource, different
+question, different middleware — the same split as `requireAuth` versus `requireAdmin`.
+Nobody should "fix" that route by adding `requireAuth`; it would refuse every delivery.
+
+- **The secret is read at module load with a throw**, like `BETTER_AUTH_SECRET` in
+  `auth.ts` and `DATABASE_URL` in `db.ts`. The reference project warns and keeps going,
+  then answers 500 to every delivery — a deploy that forgot the variable looks healthy
+  while silently dropping mail.
+- **Header only (`x-webhook-secret`), never a query parameter.** The reference project
+  also reads `?secret=`, which puts a credential into access logs, proxy logs and error
+  reports. Nothing outside this repo calls the route yet, so header-only costs nothing —
+  and it will not have to be undone: SendGrid's Inbound Parse cannot send a custom header
+  at all, and the answer there is one of its security policies (ECDSA signature
+  verification, or OAuth with an `Authorization: Bearer` token), not a query string.
+- **Compared with `crypto.timingSafeEqual`**, after a length check because it throws on a
+  length mismatch. Be honest about its worth: **no test in the suite can tell it from
+  `!==`**, and over a network jitter swamps the difference. It is four lines and the right
+  habit, not something the suite is guarding.
 
 - Two separate guards, mounted in that order: `requireAuth` (is there a session? no → **401**)
   then `requireAdmin` (is the role `admin`? no → **403**). Authentication and authorization
@@ -228,11 +264,71 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
   it would not work. A restore living in a script an admin runs is a different thing
   from a button.
 
+## Tickets (inbound email)
+
+- **A ticket is only ever created by `POST /api/webhooks/inbound-email`.** There is no
+  `POST /api/tickets`, and that is the reference project's design rather than something
+  missing: a ticket *is* an email, so the ingestion point is the only writer. The
+  planning docs promised a manual create form as a stand-in; the reference code never
+  built one, and `_resources/project/implementation-plan.md` now says so.
+- **The request body is plain JSON** (`from`, `fromName`, `subject`, `body`,
+  `bodyHtml?`), which is the shape the reference project uses at this step. A real
+  provider posts `multipart/form-data`, so connecting one means adding a parser in front
+  of this schema — not changing it. `express.json()` parses only
+  `content-type: application/json`, so unlike the Better Auth handler this mount has no
+  ordering constraint.
+- **Three fields are absent from the schema on purpose, and zod strips rather than
+  refuses them.** A body asking for `status: "closed"`, a `category` or an
+  `assignedToId` gets an open, uncategorised, unassigned ticket instead of a 400 — the
+  same decision `POST /api/users` makes about `role`, and
+  `webhook-inbound-email.spec.ts` pins it. `status` comes from the column default;
+  a classifier fills `category` in a later phase; assignment is its own endpoint.
+- **`body` is neither trimmed nor capped.** Trimming would edit the customer's message.
+  The reference project caps it at 1000 characters later in its build, which turns any
+  real support email into a flat 400 — and once a provider is posting, a 400 means
+  retried and then dropped. A spec sends 5000 characters to hold that open.
+- **`from` is lowercased, which the reference project does not do.** The duplicate guard
+  below compares `senderEmail` as bytes — only the subject comparison is
+  case-insensitive — so the same person writing from two capitalisations would otherwise
+  be two senders and the guard would miss. Same reasoning as `createUserSchema`, one
+  notch weaker because nothing here signs in.
+- **The duplicate guard is a guard, not threading.** When it matches it answers `200`
+  with the ticket that already exists and **writes nothing at all**, because there is no
+  `Reply` model yet — so the follow-up's body is lost. That is a recorded gap, not
+  intended behaviour.
+  - **It fires only when the subject claims to be a reply** (`Re:` / `Fwd:`, stacked or
+    lower-cased). The reference project matches *any* subject, so two unrelated emails a
+    customer happens to title "Help" collapse into one ticket and the second body
+    vanishes. Creating one ticket too many is a mistake somebody can see and fix;
+    swallowing a customer's message is not. The spec that holds this is
+    *"the same subject twice without a reply prefix is two tickets"* — widen the
+    condition and it is the only one that fails.
+  - **The subject is stored stripped**, so a reply's `Re: ` never becomes part of the
+    ticket's name.
+  - The guard also requires `status: "open"`, so a reply to a resolved ticket should
+    create a new one. **That branch has no test**, because nothing can resolve a ticket
+    yet — no `PATCH` endpoint, and the specs reach the database only over HTTP. Written
+    into the spec file as a comment rather than left as a silent hole.
+- **No `messageId` column.** It would make a retried delivery idempotent and would be
+  the basis for real RFC 5322 threading, but nothing sends a message id to this endpoint
+  today, so it would be a column nothing fills. It lands with the mail provider, which
+  is when `Message-ID` / `In-Reply-To` / `References` start arriving.
+- **No try/catch in the handler.** `ticket` carries no unique constraint and the body
+  carries no foreign key, so there is no Prisma error worth a different status code, and
+  Express 5 forwards a rejection on its own.
+- **`TICKET_FIELDS` is the allow-list every answer selects**, and `updatedAt` is left out
+  of it deliberately: keeping one real column outside the list is what gives the specs'
+  sorted-key-set assertion teeth. Drop the `select` and that assertion goes red.
+
 ## Error handling
 
 - **Every error answers `{ error: "<snake_case_code>" }`.** In use: `unauthenticated`
-  (401), `forbidden` (403), `admin_not_deletable` (403), `invalid_body` (400),
-  `user_not_found` (404), `email_taken` (409), `internal_error` (500).
+  (401), `invalid_webhook_secret` (401), `forbidden` (403), `admin_not_deletable` (403),
+  `invalid_body` (400), `user_not_found` (404), `email_taken` (409),
+  `internal_error` (500).
+  Two codes share 401 as well: `unauthenticated` means no session was presented,
+  `invalid_webhook_secret` means no session was *looked for* — a client should be able to
+  tell which door turned it away.
   Two codes share 403 on purpose: `forbidden` means the *caller* may not be here,
   `admin_not_deletable` means the caller is entitled and the *target* is protected. A client reads the code; the prose for
   a person is the client's job.
@@ -293,6 +389,10 @@ production; `.env.test` sets `NODE_ENV=test` so E2E runs don't hit 429s.
   `create-user.ts` (the field allow-list + the row-writing function shared with
   `prisma/seed.ts`), `update-user.ts` (the profile/password write behind `PATCH`)
   and `delete-user.ts` (the soft delete behind `DELETE`)
+- `src/tickets/` — the inbound-email module: `inbound-email.routes.ts` (the router, the
+  request schema, the duplicate guard and the field allow-list, all in one file — see
+  **Module layout**)
 - `src/auth.ts` — better-auth config · `src/require-auth.ts` — session guard
-  · `src/require-admin.ts` — role guard
+  · `src/require-admin.ts` — role guard · `src/require-webhook-secret.ts` — shared-secret
+  guard for the one caller that is not a person
 - `src/db.ts` — Prisma client · `prisma/` — schema, migrations, `seed.ts`

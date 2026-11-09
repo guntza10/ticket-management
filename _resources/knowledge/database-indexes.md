@@ -184,10 +184,10 @@ WHERE deletedAt IS NULL      → ตรง 99,980 แถว  ❌ index ไม่
 
 | ที่ไหน | index | ใครใช้ |
 |---|---|---|
-| [schema.prisma:55](../../server/prisma/schema.prisma#L55) | `@@unique([email])` บน `User` | `/sign-in/email` หา user จาก email ทุกครั้งที่ login |
-| [schema.prisma:70](../../server/prisma/schema.prisma#L70) | `@@unique([token])` บน `Session` | better-auth อ่าน session จาก token ใน cookie **ทุก request** |
-| [schema.prisma:71](../../server/prisma/schema.prisma#L71) | `@@index([userId])` บน `Session` | `session.deleteMany({ where: { userId } })` ใน [delete-user.ts:56](../../server/src/users/delete-user.ts#L56) |
-| [schema.prisma:91](../../server/prisma/schema.prisma#L91) | `@@index([userId])` บน `Account` | `update-user.ts` อ่าน account row ของ user |
+| [schema.prisma:119](../../server/prisma/schema.prisma#L119) | `@@unique([email])` บน `User` | `/sign-in/email` หา user จาก email ทุกครั้งที่ login |
+| [schema.prisma:134](../../server/prisma/schema.prisma#L134) | `@@unique([token])` บน `Session` | better-auth อ่าน session จาก token ใน cookie **ทุก request** |
+| [schema.prisma:135](../../server/prisma/schema.prisma#L135) | `@@index([userId])` บน `Session` | `session.deleteMany({ where: { userId } })` ใน [delete-user.ts:56](../../server/src/users/delete-user.ts#L56) |
+| [schema.prisma:155](../../server/prisma/schema.prisma#L155) | `@@index([userId])` บน `Account` | `update-user.ts` อ่าน account row ของ user |
 | ทุก model | `id @id` | primary key — **Postgres สร้าง index ให้อัตโนมัติ** |
 
 **`@@unique` คือ index ด้วย** นั่นคือเหตุที่ทางเลือกของเรื่อง email ถูกเรียกว่า
@@ -211,7 +211,7 @@ WHERE deletedAt IS NULL      → ตรง 99,980 แถว  ❌ index ไม่
 → ใส่ index ไป = จ่ายค่า disk + ทำให้ทุก delete และทุก seed ช้าลง **โดยไม่มี query ไหนได้ประโยชน์**
 และถึงวันที่มีคนกรอง `WHERE deletedAt IS NULL` จริง ก็ยังเข้าเคสข้อ 6 ที่ index ไม่ช่วย
 
-comment ที่ [schema.prisma:46-47](../../server/prisma/schema.prisma#L46-L47) เขียนไว้ว่า
+comment ที่ [schema.prisma:105-106](../../server/prisma/schema.prisma#L105-L106) เขียนไว้ว่า
 *"Add one only if a query starts filtering"* — มีไว้กันคนมาเพิ่มให้เอง เพราะคนที่เห็นคอลัมน์
 soft delete ไม่มี index จะคิดว่าลืม
 
@@ -224,6 +224,27 @@ soft delete ไม่มี index จะคิดว่าลืม
 ```
 
 **ใส่ index เฉยๆ ไม่ทำให้อะไรถูกกรองออก** และข้ามข้อ ② ไปเลยก็มีสิทธิ์ได้ index ที่ไม่มีใครใช้
+
+### มี query ที่ "กรอง" แล้วจริง — และยังไม่ใส่ index
+
+webhook ที่รับ email มี query กัน ticket ซ้ำ ที่
+[inbound-email.routes.ts](../../server/src/tickets/inbound-email.routes.ts) หาด้วย
+`where: { senderEmail, status: "open", subject }` — ครั้งแรกที่โปรเจกต์นี้มี query ใช้คอลัมน์
+ที่ไม่มี index เป็นตัว "หา" แถว เพราะงั้นตัวอักษรของ comment ที่ `User.deletedAt`
+(*"Add one only if a query starts filtering"*) เข้าเงื่อนไขแล้ว — **แต่เหตุผลของมันยังไม่เข้า**
+และความต่างนั้นคือหัวใจข้อ 6:
+
+| คอลัมน์ | ตัดแถวออกได้แค่ไหน | คุ้มไหม |
+|---|---|---|
+| `status` | 3 ค่า และเกือบทุกแถวเป็น `open` | ❌ ตรงเกือบทั้งตาราง — เคสล่างของข้อ 6 เป๊ะ |
+| `category` | 3 ค่า (ยังไม่มี query ไหนกรองเลย) | ❌ |
+| `senderEmail` | แทบจะ unique ต่อคน | ✅ **ตัวนี้คือตัวแรกที่ควรได้ index** — แต่รอข้อ ② |
+
+ตอนนี้ `ticket` มีหลักสิบแถว อ่านทั้งตารางเร็วกว่าอยู่แล้ว → รอให้ `EXPLAIN` บอกว่า seq scan
+กินเวลาจริงก่อน แล้วค่อยใส่ `@@index([senderEmail])`
+
+**บทเรียนที่เพิ่มมาจากรอบนี้:** comment ในโค้ดที่เขียนว่า "ใส่เมื่อมีการกรอง" สั้นเกินไปหนึ่งขั้น
+เกณฑ์ที่ใช้จริงคือ "กรองแล้วตัดแถวออกได้เยอะหรือเปล่า" ไม่ใช่ "มีการกรองหรือยัง"
 
 ---
 

@@ -40,19 +40,34 @@ Legend: 🔴 must-have · 🟡 important · 🟢 later
       **soft delete**; admins are undeletable, and the deleted user is signed out and
       refused a new sign-in
 - [x] Add role-based access control (admin vs agent) — `requireAdmin` (403);
-      apply it to each new endpoint as it lands
+      apply it to each new **admin-only** endpoint as it lands — narrowed 2026-11-08,
+      because it read as an instruction to put `requireAdmin` on everything, and
+      `/api/tickets` is work both roles do while the inbound webhook has no session
+      at all
 
 ## Phase 4 — Ticket CRUD 🔴
 
-- [ ] Implement create ticket API endpoint
+- [x] Implement create ticket API endpoint — **it is the inbound-email webhook,
+      `POST /api/webhooks/inbound-email`, not a `POST /api/tickets`.** The reference
+      project has no such route and no manual create form; a ticket's only writer is
+      the ingestion point. Guarded by a shared secret, not a session
 - [ ] Implement list tickets API endpoint (with filtering by status and category, sorting)
 - [ ] Implement get ticket API endpoint
 - [ ] Implement update ticket API endpoint (change status, assign agent)
 - [ ] Create ticket list page with filtering and sorting
 - [ ] Create ticket detail page
 
-> **[ours]** The create-ticket step uses a manual form as a stand-in for email
-> until Phase 6 — so we can build/test everything without inbound email yet.
+> **[ours]** This note used to say the create-ticket step would use a manual form as a
+> stand-in for email until Phase 6. **That was our guess and it was wrong** — corrected
+> 2026-11-08 after reading the reference project's own commit for this step
+> (`f76a78d Add the ability to receive tickets`). It builds the webhook here, in Phase 4,
+> with a plain-JSON body and no mail provider: the endpoint waits for a provider rather
+> than a form waiting for the endpoint. Phase 6 is then only the provider, the outbound
+> half and real threading.
+>
+> **Read the reference project by commit, not by its working tree.** Its history is one
+> commit per video, so `git show <commit>` is what a step contains; the files on disk are
+> the finished app, roughly fifteen videos further on.
 
 ## Phase 5 — AI Features 🟡
 
@@ -71,12 +86,17 @@ Legend: 🔴 must-have · 🟡 important · 🟢 later
 ## Phase 6 — Email Integration 🟢
 
 - [ ] Set up email provider (SendGrid/Mailgun)
-- [ ] Implement inbound email webhook to create tickets
+- [x] Implement inbound email webhook to create tickets — **done in Phase 4**, where the
+      reference project builds it. What is left here is the provider in front of it: a
+      `multipart/form-data` parser, and a security policy instead of our shared header
+      secret (Inbound Parse cannot send custom headers)
 - [ ] Implement outbound email sending when an agent replies
 - [ ] Handle email threading (replies linked to existing tickets)
 
-> **[ours]** If inbound setup blocks progress, keep the Phase 4 manual form as the
-> stand-in and come back to it.
+> **[ours]** The webhook itself already exists (Phase 4). This phase is the provider, the
+> outbound half, and replacing the subject-based duplicate guard with real `Message-ID` /
+> `In-Reply-To` / `References` threading — which needs a `Reply` model and a `messageId`
+> column, neither of which exists yet because nothing sends a message id today.
 
 ## Phase 7 — Dashboard 🟢
 

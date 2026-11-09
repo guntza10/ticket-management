@@ -5,6 +5,7 @@ import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.ts";
 import { requireAuth } from "./require-auth.ts";
 import usersRouter from "./users/users.routes.ts";
+import inboundEmailRouter from "./tickets/inbound-email.routes.ts";
 import { CLIENT_ORIGIN, PORT } from "./config.ts";
 
 const app = express();
@@ -43,10 +44,20 @@ app.get("/api/me", requireAuth, (_req, res) => {
   });
 });
 
-// Everything under /api/users lives in its own module, guards included. This
-// file keeps the app's wiring — middleware order, mounts, the error handler —
-// so a route's details never compete with it for attention.
+// Each resource lives in its own module, guards included. This file keeps the
+// app's wiring — middleware order, mounts, the error handler — so a route's
+// details never compete with it for attention.
 app.use("/api/users", usersRouter);
+
+// The one route that is not called by a person. It is guarded by a shared
+// secret rather than a session (see require-webhook-secret.ts), and its module
+// lives in src/tickets/ because a ticket is what it writes — the URL says who
+// calls it, the folder says what it touches.
+//
+// Order does not matter here the way it does for the Better Auth handler
+// above: express.json() parses only application/json, which is exactly what
+// this route accepts.
+app.use("/api/webhooks/inbound-email", inboundEmailRouter);
 
 app.get("/", (_req, res) => {
   res.send("Ticket Management API");
