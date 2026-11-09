@@ -59,10 +59,12 @@ app.use("/api/users", usersRouter);
 // this route accepts.
 app.use("/api/webhooks/inbound-email", inboundEmailRouter);
 
-app.get("/", (_req, res) => {
-  res.send("Ticket Management API");
-});
-
+// Liveness, not readiness: it answers from the process alone and deliberately
+// does not touch Postgres. That is exactly what playwright.config.ts wants from
+// it — a cheap "is the API listening yet" before a run starts — and a readiness
+// check that queried the database would make a test run fail for a reason the
+// test is not about. A real deployment wants the other kind too; that belongs
+// with the deployment work, not here.
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });

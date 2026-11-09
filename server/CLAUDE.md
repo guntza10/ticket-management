@@ -60,8 +60,14 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
     duplicate-guard decision) out the day `server/` gets a test runner, because that is
     the day a test could aim at them without HTTP.
 - **`index.ts` holds wiring, not routes:** middleware order, mounts, the error handler,
-  `listen`. The only handlers left in it are `/api/me`, `/` and `/health` — `/api/me`
-  moves the day auth gets a module of its own.
+  `listen`. Two handlers are left in it. `/health` stays: it is **liveness** — it answers
+  from the process alone, which is what `playwright.config.ts` polls before a run and
+  what a deployment healthcheck wants. A **readiness** check (one that queries Postgres,
+  so a server with a dead database stops claiming to be healthy) belongs with the
+  deployment work; adding it now would also make an E2E run fail for a reason no test is
+  about. `/api/me` is scaffolding that only the specs use — see **Authorization**.
+  `GET /` was removed on 2026-11-09: it answered a fixed string and nothing, in the app
+  or in the suite, ever called it.
 - **Imports only ever point downward, and right now nothing but this bullet says so.**
   `index.ts` may import a module; a module (`users/`) may import the shared files at
   `src/` root (`db.ts`, `auth.ts`, `require-*.ts`) and `core/`; those shared files may
