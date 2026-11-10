@@ -48,6 +48,35 @@ test.describe("Inbound email webhook — the secret", () => {
 
     expect(response.status()).toBe(401);
   });
+
+  // Until this existed, no spec in the suite reached timingSafeEqual at all:
+  // every wrong secret sent was a different length, so the length comparison
+  // in front of it short-circuited and the byte comparison never ran. Dropping
+  // the `!` from `!timingSafeEqual(...)` left the whole suite green, which is
+  // the regression this closes.
+  test("is 401 for a wrong secret of exactly the same length", async ({
+    request,
+  }) => {
+    const sameLength = `${WEBHOOK_SECRET.slice(0, -1)}X`;
+    expect(sameLength).toHaveLength(WEBHOOK_SECRET.length);
+
+    const response = await postInboundEmail(request, validEmail("same-length"), {
+      secret: sameLength,
+    });
+
+    expect(response.status()).toBe(401);
+  });
+
+  // Node does not hand a duplicated header over as an array — it joins the
+  // values with ", " — so this is the string the guard actually receives when a
+  // caller sends x-webhook-secret twice. It is refused on length.
+  test("is 401 when the secret header is sent twice", async ({ request }) => {
+    const response = await postInboundEmail(request, validEmail("twice"), {
+      secret: `${WEBHOOK_SECRET}, junk`,
+    });
+
+    expect(response.status()).toBe(401);
+  });
 });
 
 test.describe("Inbound email webhook — validation", () => {
@@ -281,6 +310,44 @@ test.describe("Inbound email webhook — the duplicate guard", () => {
     );
 
     expect(second.id).not.toBe(first.id);
+  });
+
+  // The duplicate guard's `where` takes a caller-controlled subject. While it
+  // compared with Prisma's `mode: "insensitive"` — which compiles to SQL ILIKE
+  // on Postgres — `%` stayed a wildcard, so this body read a stranger's open
+  // ticket, body and all, without knowing its subject. Proven by hand against
+  // the dev server before the fix: it answered 200 with the other ticket.
+  test("a wildcard subject cannot reach another ticket", async ({ request }) => {
+    const email = validEmail("wildcard");
+    const first = await sendEmailExpecting(request, email, 201);
+
+    const probe = await sendEmailExpecting(
+      request,
+      { ...email, fromName: "probe", subject: "Re: %", body: "probe" },
+      201,
+    );
+
+    expect(probe.id).not.toBe(first.id);
+    // Stored as the literal it is, not as a pattern that matched something.
+    expect(probe.subject).toBe("%");
+  });
+
+  // The other half of the same fix, and the half an escaping-based fix tends to
+  // break: a subject that genuinely contains % must still thread with itself.
+  test("a subject containing % still threads with its own reply", async ({
+    request,
+  }) => {
+    const subject = `${newSubject("percent")} 100% off`;
+    const email = { ...validEmail("percent"), subject };
+    const first = await sendEmailExpecting(request, email, 201);
+
+    const reply = await sendEmailExpecting(
+      request,
+      { ...email, subject: `Re: ${subject}` },
+      200,
+    );
+
+    expect(reply.id).toBe(first.id);
   });
 
   // One branch of the guard has no test here, written down rather than left as

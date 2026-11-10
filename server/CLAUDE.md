@@ -54,7 +54,11 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
     which the import rule below forbids outright — so the mismatch between folder and
     URL is the rule working, not a slip. The reference project puts it in
     `src/routes/webhooks.ts`, which it can because it has no such rule.
-  - **`src/tickets/` is one file on purpose.** No `create-ticket.ts`: `create-user.ts`
+  - **The webhook's guard is on the router** (`router.use(requireWebhookSecret)`), the same
+  shape `users.routes.ts` uses, and for a sharper reason: if a second route under this
+  mount were added without the guard there is no session layer behind it to catch the
+  omission, which `/api/users` always has.
+- **`src/tickets/` is one file on purpose.** No `create-ticket.ts`: `create-user.ts`
     earned its own file because `prisma/seed.ts` is a second caller, and nothing is a
     second caller here. Split the pure helpers (`stripSubjectPrefixes`, the
     duplicate-guard decision) out the day `server/` gets a test runner, because that is
@@ -127,9 +131,22 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
   at all, and the answer there is one of its security policies (ECDSA signature
   verification, or OAuth with an `Authorization: Bearer` token), not a query string.
 - **Compared with `crypto.timingSafeEqual`**, after a length check because it throws on a
-  length mismatch. Be honest about its worth: **no test in the suite can tell it from
+  length mismatch. Be honest about its worth against *timing*: **no test can tell it from
   `!==`**, and over a network jitter swamps the difference. It is four lines and the right
-  habit, not something the suite is guarding.
+  habit there.
+  Its *correctness*, though, is now guarded, and it was not until 2026-11-10. Every wrong
+  secret any spec sent was a different length, so the length comparison short-circuited
+  and the byte comparison never ran once in the whole suite — measured: replacing it with
+  `timingSafeEqual(candidate, candidate)`, which accepts any secret of the right length,
+  left 21 of 22 specs green. *"is 401 for a wrong secret of exactly the same length"* is
+  the one that fails, and it is the only reason that hole is closed.
+- **A duplicated header is not an array.** Node joins repeated values with `", "` (only
+  `set-cookie` is ever an array), so `typeof provided !== "string"` catches the header
+  being **absent**, and a doubled header is refused on length. The comment here claimed
+  the opposite until 2026-11-10; both paths now have a spec.
+- **A refusal is logged, the value sent is not.** Without any log, a caller can guess at
+  this secret indefinitely and nothing on our side would show it had happened — there is
+  no rate limit in front of it either.
 
 - Two separate guards, mounted in that order: `requireAuth` (is there a session? no → **401**)
   then `requireAdmin` (is the role `admin`? no → **403**). Authentication and authorization
@@ -323,7 +340,16 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
     *"the same subject twice without a reply prefix is two tickets"* — widen the
     condition and it is the only one that fails.
   - **The subject is stored stripped**, so a reply's `Re: ` never becomes part of the
-    ticket's name.
+    ticket's name — and stored a second time, lower-cased, as `subjectNormalized`.
+  - **The match is plain equality against `subjectNormalized`, and that is a security
+    boundary.** It used to compare `subject` with Prisma's `mode: "insensitive"`, which
+    compiles to SQL `ILIKE` on Postgres and leaves `%` and `_` as live wildcards: a
+    caller holding the secret could send `Re: %` and get back any open ticket of any
+    address, body included. Confirmed against a running server on 2026-11-09, fixed on
+    2026-11-10. Prisma parameterises the value, so this was never SQL injection — it was
+    **pattern** injection, which parameterising does not touch. **Never reach for
+    `mode: "insensitive"` on caller input again**; normalise on write instead, which also
+    cannot be undone by the next person who adds a filter.
   - The guard also requires `status: "open"`, so a reply to a resolved ticket should
     create a new one. **That branch has no test**, because nothing can resolve a ticket
     yet — no `PATCH` endpoint, and the specs reach the database only over HTTP. Written

@@ -45,9 +45,13 @@ export function requireWebhookSecret(
 ) {
   const provided = req.headers["x-webhook-secret"];
 
-  // A repeated header arrives as an array, which is not a credential anyone
-  // meant to send; refuse it rather than pick one.
+  // This branch is the header being absent. It is *not* the duplicated-header
+  // case, which an earlier version of this comment claimed: Node joins repeated
+  // values with ", " rather than handing over an array (only set-cookie is ever
+  // an array), so a doubled header arrives as a string and is refused on length
+  // below. Both are covered by specs.
   if (typeof provided !== "string") {
+    console.warn("[webhook] refused: no x-webhook-secret header");
     return res.status(401).json({ error: "invalid_webhook_secret" });
   }
 
@@ -67,6 +71,11 @@ export function requireWebhookSecret(
     candidate.length !== expected.length ||
     !timingSafeEqual(candidate, expected)
   ) {
+    // The miss is logged, never the value that was sent. Without any log a
+    // caller can guess at this secret indefinitely and nothing on our side
+    // would show it had happened — there is no rate limit in front of it yet
+    // either (see the root CLAUDE.md Known gaps).
+    console.warn("[webhook] refused: x-webhook-secret did not match");
     return res.status(401).json({ error: "invalid_webhook_secret" });
   }
 

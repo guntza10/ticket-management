@@ -45,7 +45,11 @@ Current specs:
   refused for, the field set of the ticket it creates together with the three fields a
   body cannot set, and the duplicate guard — a `Re:`/`Fwd:`/stacked-prefix follow-up
   answers 200 with the ticket that already exists, while the same subject sent twice
-  *without* a reply prefix is two tickets. The only specs here that never sign in
+  *without* a reply prefix is two tickets, while a wildcard one (`Re: %`) cannot reach
+  anyone else's ticket. Two of them exist only to reach parts of the guard nothing
+  touched: a wrong secret of **exactly the same length** (without it the byte comparison
+  never ran in the whole suite, so a guard that accepted any same-length secret stayed
+  green) and a doubled header. The only specs here that never sign in
 
 The `trustedOrigins` tests only work because `server/src/auth.ts` sets
 `advanced: { disableOriginCheck: false }`. Better Auth otherwise defaults that check

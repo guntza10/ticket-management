@@ -15,6 +15,13 @@ import { requireWebhookSecret } from "../require-webhook-secret.ts";
 // caller. Those are two different things and only the URL is a webhook's.
 const router = Router();
 
+// On the router rather than on the route, which is what server/CLAUDE.md asks
+// for when every route under a mount shares a guard: the mistake that ships is
+// a new route added without it. That matters more here than on /api/users,
+// because this is the one surface with no session layer behind the guard to
+// catch the omission.
+router.use(requireWebhookSecret);
+
 // Exactly the fields every /api/webhooks answer is built from, and the fields
 // the ticket endpoints will select when they land. An allow-list, not a
 // convenience: a bare create() returns every column the table happens to have,
@@ -62,10 +69,24 @@ export const TICKET_FIELDS = {
 // from Bob@Example.com and then bob@example.com would be two senders and the
 // guard would miss. Same reasoning as createUserSchema, one notch weaker
 // because nothing here signs in.
+// RFC 5322 limits a header line to 998 characters, which is the one
+// non-arbitrary ceiling available for the two fields that come off header
+// lines. `body` is deliberately uncapped — see above — and that reasoning does
+// not reach `subject`, which a ticket table will render.
+const EMAIL_HEADER_MAX_LENGTH = 998;
+
 const inboundEmailSchema = z.object({
   from: z.email("Invalid email address").toLowerCase(),
-  fromName: z.string().trim().min(1, "Sender name is required"),
-  subject: z.string().trim().min(1, "Subject is required"),
+  fromName: z
+    .string()
+    .trim()
+    .min(1, "Sender name is required")
+    .max(EMAIL_HEADER_MAX_LENGTH, "Sender name is too long"),
+  subject: z
+    .string()
+    .trim()
+    .min(1, "Subject is required")
+    .max(EMAIL_HEADER_MAX_LENGTH, "Subject is too long"),
   body: z.string().min(1, "Body is required"),
   bodyHtml: z.string().optional(),
 });
@@ -78,7 +99,7 @@ function stripSubjectPrefixes(subject: string) {
   return subject.replace(REPLY_PREFIX, "").trim();
 }
 
-router.post("/", requireWebhookSecret, async (req, res) => {
+router.post("/", async (req, res) => {
   // safeParse rather than parse: a malformed body is the caller's mistake, so
   // it answers 400 instead of falling through to the 500 handler. Express 5
   // leaves req.body undefined when nothing parsed, which safeParse rejects on
@@ -90,7 +111,10 @@ router.post("/", requireWebhookSecret, async (req, res) => {
   }
 
   const data = parsed.data;
-  const normalizedSubject = stripSubjectPrefixes(data.subject);
+  const strippedSubject = stripSubjectPrefixes(data.subject);
+  // Lower-cased once here, stored, and matched on. See schema.prisma for why
+  // the comparison may not go through `mode: "insensitive"`.
+  const subjectNormalized = strippedSubject.toLowerCase();
 
   // A duplicate guard, not threading. There is no Reply model yet, so a match
   // answers 200 with the ticket that already exists and writes nothing at all.
@@ -110,8 +134,16 @@ router.post("/", requireWebhookSecret, async (req, res) => {
     const existingTicket = await prisma.ticket.findFirst({
       where: {
         senderEmail: data.from,
+        // Only an open ticket is joined. A reply to one already resolved or
+        // closed starts a new ticket instead of reopening it, because reopening
+        // is a product decision nobody has made yet — it is deferred in
+        // _resources/project/requirements.md. This is the one condition here
+        // with no spec: nothing can resolve a ticket until PATCH exists.
         status: "open",
-        subject: { equals: normalizedSubject, mode: "insensitive" },
+        // Plain equality against the normalised column. Never `subject` with
+        // `mode: "insensitive"` — that compiles to ILIKE and hands the caller a
+        // wildcard. See schema.prisma.
+        subjectNormalized,
       },
       select: TICKET_FIELDS,
     });
@@ -133,7 +165,8 @@ router.post("/", requireWebhookSecret, async (req, res) => {
   // and in the shared pool.
   const ticket = await prisma.ticket.create({
     data: {
-      subject: normalizedSubject,
+      subject: strippedSubject,
+      subjectNormalized,
       body: data.body,
       bodyHtml: data.bodyHtml ?? null,
       senderName: data.fromName,

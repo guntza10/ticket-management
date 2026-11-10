@@ -57,6 +57,20 @@ model Ticket {
   senderName  String
   senderEmail String
 
+  // The subject with its reply prefixes stripped and lower-cased, written on
+  // create. The duplicate guard matches on THIS column with plain equality,
+  // and that is a security boundary rather than a tidiness: comparing
+  // `subject` with Prisma's `mode: "insensitive"` compiles to SQL ILIKE on
+  // Postgres, which leaves `%` and `_` as live wildcards — a caller holding the
+  // webhook secret could send `Re: %` and read back any open ticket belonging
+  // to any address, body included. Confirmed against a running server on
+  // 2026-11-09 before this column existed.
+  //
+  // A normalised column keeps the case-insensitive matching the product wants
+  // while never putting caller input where a pattern is expected, and unlike
+  // escaping `%`/`_` it cannot be undone by the next person who adds a filter.
+  subjectNormalized String
+
   // Null is the shared pool — nobody has picked it up. Nothing writes it yet;
   // assignment is its own endpoint in a later phase, so a created ticket
   // always lands here as null.
