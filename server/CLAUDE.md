@@ -137,11 +137,12 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
   Its *correctness*, though, is now guarded, and it was not until 2026-11-10. Every wrong
   secret any spec sent was a different length, so the length comparison short-circuited
   and the byte comparison never ran once in the whole suite — measured: replacing it with
-  `timingSafeEqual(candidate, candidate)`, which accepts any secret of the right length,
-  left 21 of 22 specs green. *"is 401 for a wrong secret of exactly the same length"* is
+  `timingSafeEqual(providedSecret, providedSecret)`, which accepts any secret of the right
+  length, left 21 of 22 specs green. *"is 401 for a wrong secret of exactly the same
+  length"* is
   the one that fails, and it is the only reason that hole is closed.
 - **A duplicated header is not an array.** Node joins repeated values with `", "` (only
-  `set-cookie` is ever an array), so `typeof provided !== "string"` catches the header
+  `set-cookie` is ever an array), so `typeof header !== "string"` catches the header
   being **absent**, and a doubled header is refused on length. The comment here claimed
   the opposite until 2026-11-10; both paths now have a spec.
 - **A refusal is logged, the value sent is not.** Without any log, a caller can guess at
@@ -361,7 +362,7 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
 - **No try/catch in the handler.** `ticket` carries no unique constraint and the body
   carries no foreign key, so there is no Prisma error worth a different status code, and
   Express 5 forwards a rejection on its own.
-- **`TICKET_FIELDS` is the allow-list every answer selects**, and `updatedAt` is left out
+- **`PUBLIC_TICKET_FIELDS` is the allow-list every answer selects**, and `updatedAt` is left out
   of it deliberately: keeping one real column outside the list is what gives the specs'
   sorted-key-set assertion teeth. Drop the `select` and that assertion goes red.
 

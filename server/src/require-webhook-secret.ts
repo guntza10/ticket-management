@@ -13,7 +13,7 @@ if (!secret) {
   );
 }
 
-const expected = Buffer.from(secret, "utf8");
+const expectedSecret = Buffer.from(secret, "utf8");
 
 // Guard middleware: allow the request only if it carries the secret we share
 // with whatever is posting mail to us.
@@ -43,33 +43,36 @@ export function requireWebhookSecret(
   res: Response,
   next: NextFunction,
 ) {
-  const provided = req.headers["x-webhook-secret"];
+  const header = req.headers["x-webhook-secret"];
 
   // This branch is the header being absent. It is *not* the duplicated-header
   // case, which an earlier version of this comment claimed: Node joins repeated
   // values with ", " rather than handing over an array (only set-cookie is ever
   // an array), so a doubled header arrives as a string and is refused on length
   // below. Both are covered by specs.
-  if (typeof provided !== "string") {
+  if (typeof header !== "string") {
     console.warn("[webhook] refused: no x-webhook-secret header");
     return res.status(401).json({ error: "invalid_webhook_secret" });
   }
 
-  const candidate = Buffer.from(provided, "utf8");
+  const providedSecret = Buffer.from(header, "utf8");
 
   // timingSafeEqual, not `!==` as the course uses: it compares every byte
   // instead of stopping at the first difference. It *throws* on a length
   // mismatch, so the lengths are compared first — and a wrong length answers
   // the same 401 as a wrong value, which is the point of using it at all.
   //
-  // Be clear about what this is worth: **no test in this suite can tell the two
-  // implementations apart**, and over a network jitter swamps the timing
-  // difference anyway. It is here because it costs four lines and is the habit
-  // to have, not because anything is guarding it. Swap it for `!==` and the
-  // suite stays green.
+  // Be clear about which half of this the suite guards. The *timing* property
+  // it exists for: nothing here can tell it from a plain `!==`, and over a
+  // network jitter swamps the difference anyway — it is four lines and the right
+  // habit, not a closed hole. Its *correctness*: guarded, by one spec sending a
+  // wrong secret of exactly the same length. Before that spec existed the
+  // length comparison below short-circuited every wrong secret the suite sent,
+  // so this line never ran once and a comparison that accepted anything of the
+  // right length left 21 of 22 specs green.
   if (
-    candidate.length !== expected.length ||
-    !timingSafeEqual(candidate, expected)
+    providedSecret.length !== expectedSecret.length ||
+    !timingSafeEqual(providedSecret, expectedSecret)
   ) {
     // The miss is logged, never the value that was sent. Without any log a
     // caller can guess at this secret indefinitely and nothing on our side

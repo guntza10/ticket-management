@@ -2,11 +2,11 @@ import { test, expect } from "@playwright/test";
 import {
   ALLOWED_TICKET_FIELDS,
   WEBHOOK_SECRET,
+  newInboundEmail,
   newSubject,
   postInboundEmail,
-  sendEmailExpecting,
-  validEmail,
-  type TicketResponse,
+  sendEmailExpectingExistingTicket,
+  sendEmailExpectingNewTicket,
 } from "./support/inbound-email";
 
 // The first specs in this suite that never sign in. The webhook is called by a
@@ -15,8 +15,8 @@ import {
 
 test.describe("Inbound email webhook — the secret", () => {
   test("is 401 with no x-webhook-secret header", async ({ request }) => {
-    const response = await postInboundEmail(request, validEmail("no-secret"), {
-      omitSecret: true,
+    const response = await postInboundEmail(request, newInboundEmail("no-secret"), {
+      secret: null,
     });
 
     expect(response.status()).toBe(401);
@@ -26,7 +26,7 @@ test.describe("Inbound email webhook — the secret", () => {
   test("is 401 with the wrong secret", async ({ request }) => {
     const response = await postInboundEmail(
       request,
-      validEmail("wrong-secret"),
+      newInboundEmail("wrong-secret"),
       { secret: "not-the-secret" },
     );
 
@@ -42,8 +42,8 @@ test.describe("Inbound email webhook — the secret", () => {
   }) => {
     const response = await postInboundEmail(
       request,
-      validEmail("query-secret"),
-      { omitSecret: true, query: `?secret=${WEBHOOK_SECRET}` },
+      newInboundEmail("query-secret"),
+      { secret: null, querySecret: WEBHOOK_SECRET },
     );
 
     expect(response.status()).toBe(401);
@@ -60,7 +60,7 @@ test.describe("Inbound email webhook — the secret", () => {
     const sameLength = `${WEBHOOK_SECRET.slice(0, -1)}X`;
     expect(sameLength).toHaveLength(WEBHOOK_SECRET.length);
 
-    const response = await postInboundEmail(request, validEmail("same-length"), {
+    const response = await postInboundEmail(request, newInboundEmail("same-length"), {
       secret: sameLength,
     });
 
@@ -71,7 +71,7 @@ test.describe("Inbound email webhook — the secret", () => {
   // values with ", " — so this is the string the guard actually receives when a
   // caller sends x-webhook-secret twice. It is refused on length.
   test("is 401 when the secret header is sent twice", async ({ request }) => {
-    const response = await postInboundEmail(request, validEmail("twice"), {
+    const response = await postInboundEmail(request, newInboundEmail("twice"), {
       secret: `${WEBHOOK_SECRET}, junk`,
     });
 
@@ -82,7 +82,7 @@ test.describe("Inbound email webhook — the secret", () => {
 test.describe("Inbound email webhook — validation", () => {
   test("is 400 when `from` is not an email address", async ({ request }) => {
     const response = await postInboundEmail(request, {
-      ...validEmail("bad-from"),
+      ...newInboundEmail("bad-from"),
       from: "not-an-email",
     });
 
@@ -94,7 +94,7 @@ test.describe("Inbound email webhook — validation", () => {
 
   test("is 400 when the subject is empty", async ({ request }) => {
     const response = await postInboundEmail(request, {
-      ...validEmail("empty-subject"),
+      ...newInboundEmail("empty-subject"),
       subject: "",
     });
 
@@ -106,7 +106,7 @@ test.describe("Inbound email webhook — validation", () => {
   // whose subject is three spaces.
   test("is 400 when the subject is only whitespace", async ({ request }) => {
     const response = await postInboundEmail(request, {
-      ...validEmail("blank-subject"),
+      ...newInboundEmail("blank-subject"),
       subject: "   ",
     });
 
@@ -115,7 +115,7 @@ test.describe("Inbound email webhook — validation", () => {
 
   test("is 400 when the body is empty", async ({ request }) => {
     const response = await postInboundEmail(request, {
-      ...validEmail("empty-body"),
+      ...newInboundEmail("empty-body"),
       body: "",
     });
 
@@ -137,11 +137,7 @@ test.describe("Inbound email webhook — validation", () => {
   test("accepts a body far longer than a thousand characters", async ({
     request,
   }) => {
-    const ticket = await sendEmailExpecting(
-      request,
-      { ...validEmail("long-body"), body: "x".repeat(5000) },
-      201,
-    );
+    const ticket = await sendEmailExpectingNewTicket(request, { ...newInboundEmail("long-body"), body: "x".repeat(5000) });
 
     expect(ticket.body).toHaveLength(5000);
   });
@@ -151,9 +147,9 @@ test.describe("Inbound email webhook — creating a ticket", () => {
   test("stores the email as an open, uncategorised, unassigned ticket", async ({
     request,
   }) => {
-    const email = validEmail("create");
+    const email = newInboundEmail("create");
 
-    const ticket = await sendEmailExpecting(request, email, 201);
+    const ticket = await sendEmailExpectingNewTicket(request, email);
 
     // The allow-list, asserted as the whole sorted key set. `updatedAt` is a
     // real column deliberately left out of TICKET_FIELDS, so dropping the
@@ -177,11 +173,7 @@ test.describe("Inbound email webhook — creating a ticket", () => {
   test("keeps the html part when the email carries one", async ({
     request,
   }) => {
-    const ticket = await sendEmailExpecting(
-      request,
-      { ...validEmail("html"), bodyHtml: "<p>hello</p>" },
-      201,
-    );
+    const ticket = await sendEmailExpectingNewTicket(request, { ...newInboundEmail("html"), bodyHtml: "<p>hello</p>" });
 
     expect(ticket.bodyHtml).toBe("<p>hello</p>");
   });
@@ -192,15 +184,13 @@ test.describe("Inbound email webhook — creating a ticket", () => {
   test("ignores status, category and assignee sent in the body", async ({
     request,
   }) => {
-    const response = await postInboundEmail(request, {
-      ...validEmail("smuggle"),
+    const ticket = await sendEmailExpectingNewTicket(request, {
+      ...newInboundEmail("smuggle"),
       status: "closed",
       category: "refund_request",
       assignedToId: "someone",
     });
 
-    expect(response.status()).toBe(201);
-    const { ticket } = (await response.json()) as { ticket: TicketResponse };
     expect(ticket.status).toBe("open");
     expect(ticket.category).toBeNull();
     expect(ticket.assignedToId).toBeNull();
@@ -210,12 +200,8 @@ test.describe("Inbound email webhook — creating a ticket", () => {
   // the duplicate guard below compares senderEmail as bytes, so the same person
   // writing from two capitalisations would otherwise be two senders.
   test("lowercases the sender address", async ({ request }) => {
-    const email = validEmail("caps");
-    const ticket = await sendEmailExpecting(
-      request,
-      { ...email, from: email.from.toUpperCase() },
-      201,
-    );
+    const email = newInboundEmail("caps");
+    const ticket = await sendEmailExpectingNewTicket(request, { ...email, from: email.from.toUpperCase() });
 
     expect(ticket.senderEmail).toBe(email.from.toLowerCase());
   });
@@ -226,54 +212,45 @@ test.describe("Inbound email webhook — the duplicate guard", () => {
   // with the ticket that already exists and the follow-up's body is written
   // nowhere. That is recorded as a known gap, not as intended behaviour.
   test("a Re: reply answers 200 with the same ticket", async ({ request }) => {
-    const email = validEmail("reply");
-    const first = await sendEmailExpecting(request, email, 201);
+    const email = newInboundEmail("reply");
+    const first = await sendEmailExpectingNewTicket(request, email);
 
-    const second = await sendEmailExpecting(
-      request,
-      { ...email, subject: `Re: ${email.subject}`, body: "following up" },
-      200,
-    );
+    const second = await sendEmailExpectingExistingTicket(request, { ...email, subject: `Re: ${email.subject}`, body: "following up" });
 
     expect(second.id).toBe(first.id);
   });
 
-  test("a Fwd:, a lowercase re: and a stacked Re: Re: all match", async ({
-    request,
-  }) => {
-    const email = validEmail("prefixes");
-    const first = await sendEmailExpecting(request, email, 201);
+  // One test per prefix rather than three requests inside one. They used to go
+  // out together through Promise.all, which was a shape the linter asked for
+  // (no-await-in-loop) and not one the test wanted: the comment claimed they
+  // only read the ticket created above, and that is true *only while the guard
+  // works* — which is the thing under test. With the guard broken the three
+  // race to create tickets and the failure stops being deterministic. A
+  // separate test per prefix also names which prefix failed for free.
+  for (const { prefix, label } of [
+    { prefix: "Fwd: ", label: "fwd" },
+    { prefix: "re: ", label: "lowercase" },
+    { prefix: "Re: Re: Re: ", label: "stacked" },
+  ]) {
+    test(`a "${prefix}" subject joins the open ticket`, async ({ request }) => {
+      const email = newInboundEmail(`prefix-${label}`);
+      const first = await sendEmailExpectingNewTicket(request, email);
 
-    // Promise.all rather than a loop of awaits, which oxlint's
-    // no-await-in-loop refuses. Running them together is harmless and slightly
-    // truer to life: all three only read the ticket the line above created.
-    const matched = await Promise.all(
-      ["Fwd: ", "re: ", "Re: Re: Re: "].map((prefix) =>
-        sendEmailExpecting(
-          request,
-          { ...email, subject: `${prefix}${email.subject}` },
-          200,
-        ),
-      ),
-    );
+      const matched = await sendEmailExpectingExistingTicket(request, {
+        ...email,
+        subject: `${prefix}${email.subject}`,
+      });
 
-    expect(matched.map((ticket) => ticket.id)).toEqual([
-      first.id,
-      first.id,
-      first.id,
-    ]);
-  });
+      expect(matched.id).toBe(first.id);
+    });
+  }
 
   test("a Re: on a subject nobody has written about creates a ticket, with the prefix stripped", async ({
     request,
   }) => {
     const subject = newSubject("unseen");
 
-    const ticket = await sendEmailExpecting(
-      request,
-      { ...validEmail("unseen"), subject: `Re: ${subject}` },
-      201,
-    );
+    const ticket = await sendEmailExpectingNewTicket(request, { ...newInboundEmail("unseen"), subject: `Re: ${subject}` });
 
     expect(ticket.subject).toBe(subject);
   });
@@ -281,14 +258,10 @@ test.describe("Inbound email webhook — the duplicate guard", () => {
   test("the same subject from a different sender is a different ticket", async ({
     request,
   }) => {
-    const email = validEmail("other-sender");
-    const first = await sendEmailExpecting(request, email, 201);
+    const email = newInboundEmail("other-sender");
+    const first = await sendEmailExpectingNewTicket(request, email);
 
-    const second = await sendEmailExpecting(
-      request,
-      { ...validEmail("other-sender-2"), subject: `Re: ${email.subject}` },
-      201,
-    );
+    const second = await sendEmailExpectingNewTicket(request, { ...newInboundEmail("other-sender-2"), subject: `Re: ${email.subject}` });
 
     expect(second.id).not.toBe(first.id);
   });
@@ -300,14 +273,10 @@ test.describe("Inbound email webhook — the duplicate guard", () => {
   test("the same subject twice without a reply prefix is two tickets", async ({
     request,
   }) => {
-    const email = { ...validEmail("not-a-reply"), subject: newSubject("help") };
+    const email = { ...newInboundEmail("not-a-reply"), subject: newSubject("help") };
 
-    const first = await sendEmailExpecting(request, email, 201);
-    const second = await sendEmailExpecting(
-      request,
-      { ...email, body: "a different problem, same title" },
-      201,
-    );
+    const first = await sendEmailExpectingNewTicket(request, email);
+    const second = await sendEmailExpectingNewTicket(request, { ...email, body: "a different problem, same title" });
 
     expect(second.id).not.toBe(first.id);
   });
@@ -318,14 +287,10 @@ test.describe("Inbound email webhook — the duplicate guard", () => {
   // ticket, body and all, without knowing its subject. Proven by hand against
   // the dev server before the fix: it answered 200 with the other ticket.
   test("a wildcard subject cannot reach another ticket", async ({ request }) => {
-    const email = validEmail("wildcard");
-    const first = await sendEmailExpecting(request, email, 201);
+    const email = newInboundEmail("wildcard");
+    const first = await sendEmailExpectingNewTicket(request, email);
 
-    const probe = await sendEmailExpecting(
-      request,
-      { ...email, fromName: "probe", subject: "Re: %", body: "probe" },
-      201,
-    );
+    const probe = await sendEmailExpectingNewTicket(request, { ...email, fromName: "probe", subject: "Re: %", body: "probe" });
 
     expect(probe.id).not.toBe(first.id);
     // Stored as the literal it is, not as a pattern that matched something.
@@ -338,14 +303,10 @@ test.describe("Inbound email webhook — the duplicate guard", () => {
     request,
   }) => {
     const subject = `${newSubject("percent")} 100% off`;
-    const email = { ...validEmail("percent"), subject };
-    const first = await sendEmailExpecting(request, email, 201);
+    const email = { ...newInboundEmail("percent"), subject };
+    const first = await sendEmailExpectingNewTicket(request, email);
 
-    const reply = await sendEmailExpecting(
-      request,
-      { ...email, subject: `Re: ${subject}` },
-      200,
-    );
+    const reply = await sendEmailExpectingExistingTicket(request, { ...email, subject: `Re: ${subject}` });
 
     expect(reply.id).toBe(first.id);
   });
