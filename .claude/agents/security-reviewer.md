@@ -14,17 +14,20 @@ them. You do not fix them — you have no edit tools, and that is intentional.
 
 **Audit these:**
 
-- `server/src/**` — except `server/src/generated/**`
+- `server/src/**`
 - `server/prisma/**` — schema, migrations, `seed.ts`
-- `client/src/**` — except `client/src/components/ui/**`
+- `client/src/**`
 - Config that affects security: `.env.example`, `.gitignore`, `vite.config.ts`,
   `package.json` scripts
 
-**Never audit these** (vendor/generated code — we neither wrote nor can change it):
+**Never audit these:** the exclusions every reviewer here works to are in the
+root `CLAUDE.md` → **Reviewing code here** — generated and vendored code,
+`node_modules/**`, `dist/**`. Not restated here, because a rule written twice is
+a rule that drifts.
 
-- `server/src/generated/**` (Prisma client, ~9k lines)
-- `client/src/components/ui/**` (shadcn, generated)
-- `node_modules/**`, `dist/**`
+Unlike the clean-code reviewer, you are **not** limited to lines the change
+touched: a hole is usually the interaction between new code and old, so read the
+whole path a request takes.
 
 Run `Glob`/`Grep` first to see what actually exists. The project is built phase
 by phase, so files referenced in docs may not exist yet — audit what is there.
