@@ -518,7 +518,7 @@ put is the first thing step 3's ordering hands you.
   provider (the body is plain JSON, which is what the reference project's own step does),
   and `messageId` — no caller sends one yet.
 - ⏭️ **Next** — `GET /api/tickets` (then sorting, filtering, pagination, the detail page,
-  assignment), following the reference project's commit order.
+  assignment).
 
 ## Known gaps — deliberately deferred
 

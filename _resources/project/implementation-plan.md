@@ -65,7 +65,13 @@ Legend: 🔴 must-have · 🟡 important · 🟢 later
 > than a form waiting for the endpoint. Phase 6 is then only the provider, the outbound
 > half and real threading.
 >
-> **Read the reference project by commit, not by its working tree.** Its history is one
+> **Consulting the reference project is a call *he* makes, not a planning step**
+> (set 2026-11-10). The default is to design from this repo's own code and docs — an
+> answer sheet turns designing into copying, and building the design judgment is the
+> point of the exercise. He says when a step should follow the video, the way he did for
+> the inbound-email webhook above.
+>
+> **When he does ask: read it by commit, not by its working tree.** Its history is one
 > commit per video, so `git show <commit>` is what a step contains; the files on disk are
 > the finished app, roughly fifteen videos further on.
 
