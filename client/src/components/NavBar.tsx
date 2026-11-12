@@ -40,6 +40,20 @@ export default function NavBar() {
           <Link to="/" className="font-semibold hover:opacity-80">
             Ticket Management
           </Link>
+          {/* Ungated, and note where it sits: *outside* the admin check
+              below. Every signed-in role works tickets, so there is nothing to
+              hide — dropping this inside that conditional is the mistake to
+              avoid, and no type or lint rule would catch it. */}
+          <NavLink
+            to="/tickets"
+            className={({ isActive }) =>
+              isActive
+                ? "text-sm font-medium text-foreground"
+                : "text-sm text-muted-foreground hover:text-foreground"
+            }
+          >
+            Tickets
+          </NavLink>
           {/* Admin-only link. Hiding it is UX, not security — the route it
               points to also guards on role, and the server must too. */}
           {session?.user.role === "admin" && (

@@ -94,6 +94,13 @@ model Ticket {
   // every insert. senderEmail is the one with real selectivity and therefore
   // the first that should get an index; the trigger is a measured slow query
   // (EXPLAIN showing the seq scan dominating), not the appearance of a WHERE.
+  //
+  // createdAt has no index either, and GET /api/tickets orders by it — a sort
+  // over a seq scan, which is nothing at this size. Its trigger is pagination:
+  // an ordered key read with take/skip is where an index starts paying, and
+  // that is the same moment the list stops returning every row. Not the first
+  // ORDER BY. Written here rather than in tickets.routes.ts because this is
+  // the file somebody adding an index will open.
   @@map("ticket")
 }
 

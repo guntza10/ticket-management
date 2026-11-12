@@ -5,6 +5,7 @@ import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.ts";
 import { requireAuth } from "./require-auth.ts";
 import usersRouter from "./users/users.routes.ts";
+import ticketsRouter from "./tickets/tickets.routes.ts";
 import inboundEmailRouter from "./tickets/inbound-email.routes.ts";
 import { CLIENT_ORIGIN, PORT } from "./config.ts";
 
@@ -48,6 +49,11 @@ app.get("/api/me", requireAuth, (_req, res) => {
 // app's wiring — middleware order, mounts, the error handler — so a route's
 // details never compete with it for attention.
 app.use("/api/users", usersRouter);
+
+// Both roles work tickets, so this one is behind requireAuth alone — the only
+// mount here without an admin check or a shared secret. The guard lives on the
+// router, not on this line.
+app.use("/api/tickets", ticketsRouter);
 
 // The one route that is not called by a person. It is guarded by a shared
 // secret rather than a session (see require-webhook-secret.ts), and its module

@@ -51,10 +51,14 @@ Legend: 🔴 must-have · 🟡 important · 🟢 later
       `POST /api/webhooks/inbound-email`, not a `POST /api/tickets`.** The reference
       project has no such route and no manual create form; a ticket's only writer is
       the ingestion point. Guarded by a shared secret, not a session
-- [ ] Implement list tickets API endpoint (with filtering by status and category, sorting)
+- [x] Implement list tickets API endpoint — `GET /api/tickets`, newest first, **no query
+      parameters at all**, guarded by `requireAuth` alone (both roles). Its own allow-list,
+      narrower than the webhook's: no `body`, no `bodyHtml`
+- [ ] Add filtering (status, category) and sorting to the list endpoint
 - [ ] Implement get ticket API endpoint
 - [ ] Implement update ticket API endpoint (change status, assign agent)
-- [ ] Create ticket list page with filtering and sorting
+- [x] Create ticket list page — a table at `/tickets`, newest first, no controls
+- [ ] Add the filtering and sorting UI
 - [ ] Create ticket detail page
 
 > **[ours]** This note used to say the create-ticket step would use a manual form as a
@@ -65,6 +69,15 @@ Legend: 🔴 must-have · 🟡 important · 🟢 later
 > than a form waiting for the endpoint. Phase 6 is then only the provider, the outbound
 > half and real threading.
 >
+> **[ours]** Pagination is not in this phase's list at all, and that is deliberate: it
+> is tracked in the root `CLAUDE.md`'s Known gaps beside the unpaginated `GET /api/users`,
+> so the two lists get paginated together. The trigger named there is connecting a real
+> mail provider, not the list feeling long.
+>
+> **[ours]** The note above at *"apply `requireAdmin` to each new admin-only endpoint"*
+> was written in anticipation that `/api/tickets` is work both roles do. It landed exactly
+> that way on 2026-11-11 — the first endpoint in the app behind `requireAuth` alone.
+
 > **Consulting the reference project is a call *he* makes, not a planning step**
 > (set 2026-11-10). The default is to design from this repo's own code and docs — an
 > answer sheet turns designing into copying, and building the design judgment is the

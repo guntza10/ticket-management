@@ -61,11 +61,20 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
   shape `users.routes.ts` uses, and for a sharper reason: if a second route under this
   mount were added without the guard there is no session layer behind it to catch the
   omission, which `/api/users` always has.
-- **`src/tickets/` is one file on purpose.** No `create-ticket.ts`: `create-user.ts`
-    earned its own file because `prisma/seed.ts` is a second caller, and nothing is a
-    second caller here. Split the pure helpers (`stripSubjectPrefixes`, the
-    duplicate-guard decision) out the day `server/` gets a test runner, because that is
-    the day a test could aim at them without HTTP.
+- **`src/tickets/` holds two routers, and the split follows the door, not the file
+    size.** `inbound-email.routes.ts` and `tickets.routes.ts` describe the same resource
+    but sit behind different URLs and answer different questions at the door —
+    "do you know the shared secret?" against "is there a session?". One
+    `router.use` cannot ask both, so a single file would have to repeat a guard per
+    route, and a route added later would inherit whichever one happened to be nearest.
+    That is the trigger for a second file here: **two guards, not two hundred lines.**
+    (This bullet read "`src/tickets/` is one file on purpose" until `GET /api/tickets`
+    arrived on 2026-11-11.)
+    Still no `create-ticket.ts`: `create-user.ts` earned its own file because
+    `prisma/seed.ts` is a second caller, and nothing is a second caller here. Split the
+    pure helpers (`stripSubjectPrefixes`, the duplicate-guard decision) out the day
+    `server/` gets a test runner, because that is the day a test could aim at them
+    without HTTP.
 - **`index.ts` holds wiring, not routes:** middleware order, mounts, the error handler,
   `listen`. Two handlers are left in it. `/health` stays: it is **liveness** — it answers
   from the process alone, which is what `playwright.config.ts` polls before a run and
@@ -161,9 +170,12 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
   (without it every `res.locals.session` is `any`).
 - **Endpoints returning user data always `select` an allow-list of fields.** A bare
   `findMany()` ships every column the table happens to have, including whatever the next
-  migration adds. That list is **one exported constant** — `PUBLIC_USER_FIELDS` in
-  `users/create-user.ts` — which all four verbs import, so a column
-  added to it reaches every answer at once. `deletedAt` is in the list because the
+  migration adds. That list is **one constant per *answer shape*** — not one per resource. For users
+  that is a single exported constant, `PUBLIC_USER_FIELDS` in `users/create-user.ts`,
+  which all four verbs import, so a column added to it reaches every answer at once:
+  GET, POST, PATCH and DELETE all answer one user in the same shape, and two hand-kept
+  copies of that list would drift. Tickets have **two**, because a list and the
+  webhook's answer are deliberately different shapes — see **Tickets (the list)**. `deletedAt` is in the list because the
   roster deliberately returns deleted rows, so the client can tell which ones they are.
   Nobody writes a `select` of their own; the two that existed were hand-kept
   copies until 2026-10-22, with a comment claiming they were shared. A plain object is
@@ -365,9 +377,55 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
 - **No try/catch in the handler.** `ticket` carries no unique constraint and the body
   carries no foreign key, so there is no Prisma error worth a different status code, and
   Express 5 forwards a rejection on its own.
-- **`PUBLIC_TICKET_FIELDS` is the allow-list every answer selects**, and `updatedAt` is left out
-  of it deliberately: keeping one real column outside the list is what gives the specs'
-  sorted-key-set assertion teeth. Drop the `select` and that assertion goes red.
+- **`PUBLIC_TICKET_FIELDS` is the allow-list the *webhook's* answers select** — it was
+  "every answer" until `GET /api/tickets` arrived with its own, narrower one. `updatedAt`
+  and `subjectNormalized` are left out of it deliberately: keeping a real column outside
+  the list is what gives the specs' sorted-key-set assertion teeth. Drop the `select` and
+  that assertion goes red.
+
+## Tickets (the list)
+
+- **`GET /api/tickets` is guarded by `requireAuth` alone** — the first route in the app
+  with no second guard behind it. `/api/users` is admin-only because managing accounts
+  is an admin's job; working tickets is what an agent is *for*
+  (`_resources/project/mvp.md`), and an admin can do everything an agent can. The guard
+  is on the router, the shape `users.routes.ts` uses, and `requireAdmin` is deliberately
+  not imported in that file so nobody adds it by accepting an autocomplete suggestion.
+  `tickets-api.spec.ts` pins it: an agent session gets the list.
+- **It has its own allow-list, `TICKET_LIST_FIELDS`, and the narrowing is the point.**
+  Seven fields; `body`, `bodyHtml` and `assignedToId` are out. Two rules decide it:
+  a field earns its place by having a **reader**, not by having a column (`id` is drawn
+  nowhere and stays, because the row's React key reads it); and the costs of guessing
+  wrong are not symmetric — too narrow fails `tsc` on the client immediately, too wide
+  ships a column to every browser with nothing ever complaining. `bodyHtml` is stored
+  unsanitised (Known gaps, root `CLAUDE.md`), so one fewer consumer is strictly better.
+- **Neither ticket constant is exported, and they are not shared.** Each lives in the
+  route file that is its only reader. `e2e/tickets-api.spec.ts` hand-writes the field
+  array it asserts, which is what makes reusing the wrong constant go red — a spec that
+  imported the value under test could not notice the server reading the wrong one.
+  **Move both into `src/tickets/ticket-fields.ts`, renaming `PUBLIC_TICKET_FIELDS` in the
+  same go, the day `GET /api/tickets/:id` wants the full shape** — a genuine second
+  reader across files is the trigger, not a line count.
+- **Newest first, with no query parameters at all.** The order is the server's so the
+  client never re-sorts: two places deciding one order is how they come to disagree, and
+  the server is the one that can still be right once this list is paginated. Sorting,
+  filtering, search and pagination are later units; a parameter nothing sends is a
+  contract with no reader and would need its own validation and specs to mean anything.
+- **Nothing indexes `createdAt`**, by the same rule as the other Ticket columns — the
+  trigger is a measured slow query or pagination, not the first `ORDER BY`.
+- **The status and category values are hand-written again on the client**
+  (`client/src/features/tickets/api/get-tickets.ts`), because it cannot import a Prisma
+  type and `erasableSyntaxOnly` rules out an enum on both sides. **Nothing enforces that
+  the two agree** — a type-level assertion that did was written and removed the same day
+  for costing more to read than it saved. See the Known gaps table in the root
+  `CLAUDE.md` for what breaks and why it was left open.
+- **`prisma/seed-tickets.ts` (`db:reseed:tickets`) is dev-only and separate from `prisma/seed.ts` on
+  purpose.** `seed.ts` is what `db:seed:test` runs and `e2e/global-setup.ts` runs it
+  before every Playwright run, so a ticket seeded there would become a row every ticket
+  spec sees but did not create. Its guard is `truncate.ts`'s turned around: it refuses
+  any database whose name ends in `_test`. It writes `status` and `category` directly,
+  which no endpoint can yet, and sets `createdAt` explicitly so newest-first is visible
+  without sleeping between inserts.
 
 ## Error handling
 
@@ -438,9 +496,10 @@ production; `.env.test` sets `NODE_ENV=test` so E2E runs don't hit 429s.
   `create-user.ts` (the field allow-list + the row-writing function shared with
   `prisma/seed.ts`), `update-user.ts` (the profile/password write behind `PATCH`)
   and `delete-user.ts` (the soft delete behind `DELETE`)
-- `src/tickets/` — the inbound-email module: `inbound-email.routes.ts` (the router, the
-  request schema, the duplicate guard and the field allow-list, all in one file — see
-  **Module layout**)
+- `src/tickets/` — the tickets module: `inbound-email.routes.ts` (the webhook's router,
+  request schema, duplicate guard and field allow-list, all in one file) and
+  `tickets.routes.ts` (`GET /api/tickets` and its own narrower allow-list) — see
+  **Module layout** for why the two are separate files
 - `src/auth.ts` — better-auth config · `src/require-auth.ts` — session guard
   · `src/require-admin.ts` — role guard · `src/require-webhook-secret.ts` — shared-secret
   guard for the one caller that is not a person

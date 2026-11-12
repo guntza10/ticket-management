@@ -192,6 +192,21 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   The delete button is also hidden on **admin** rows. That is the UI half of a rule the
   server enforces with `403 admin_not_deletable`; hiding it is courtesy, the refusal is
   what counts — the same split as the admin-only NavLink.
+  - **`features/tickets/` shipped both halves on day one** (2026-11-11) rather than
+    waiting for a sweep to notice the collection half, which is the standing correction
+    to the 2026-10-26 miss. `TicketsTable` + `TicketsTableRow`, same props shape, same
+    reasons.
+  - **The two tables are deliberately not abstracted into a shared `DataTable`.** That
+    would be an abstraction, so reuse is its test — and a second caller now exists, which
+    is why this needs saying rather than being obvious. The question that decides it is
+    the other one: *must the copies change together?* They must not. A column added to
+    the roster says nothing about the ticket list, and sorting, filtering and pagination
+    are coming to the ticket list and not to the roster. A hand-rolled `DataTable` would
+    have to take a column-definition array — which is what TanStack Table is — and would
+    be guessed right before the thing that reshapes it arrives. **Trigger: a third
+    table, or the sorting step, whichever comes first.** `splitRows()` in the two table
+    tests is the same copy twice and stays that way on the same reasoning; its home if a
+    third appears is `src/test/`, beside `axios-error.ts`.
 - **`api` carries a 401 interceptor, and it is the only thing watching our own API.**
   Better Auth's session store already refetches on window focus and nulls itself on a
   401, so `ProtectedRoute` sends someone to `/login` on the next reload or tab switch —
@@ -256,8 +271,9 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     → **a store**. Note the last step: "shared in many places" argues for Context, not
     for a store. A store needs a second reason — re-renders that need selectors, update
     logic worth keeping in one place, reads from outside React, or devtools.
-  - **The one coming soon is ticket filters, and the answer there is probably not a
-    store either.** Status / category / assignee / search / page belong in the URL
+  - **Ticket filters are the next one, and the answer there is probably not a store
+    either.** The list landed on 2026-11-11 with no filters at all, on purpose —
+    `GET /api/tickets` takes no query parameters, so there is nothing to hold yet. Status / category / assignee / search / page belong in the URL
     (`useSearchParams`), because a filtered list should survive a refresh, work with the
     back button, and be shareable as a link. A store does none of those.
   - **Never park server data in a store.** That is a second cache beside the one
@@ -316,17 +332,27 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 
 ## Structure
 
-- `src/pages/` — route pages (`LoginPage`, `HomePage`, `UsersPage`)
+- `src/pages/` — route pages (`LoginPage`, `HomePage`, `UsersPage`, `TicketsPage`)
 - `src/features/<domain>/` — everything that only one domain uses, e.g.
   `features/users/components/` (`CreateUserDialog`, `CreateUserForm`,
   `EditUserDialog`, `EditUserForm`, `DeleteUserDialog`, `UsersTable`, `UsersTableRow`)
+  and `features/tickets/components/` (`TicketsTable`, `TicketsTableRow` — read-only, no
+  dialogs, because a ticket's only writer is the inbound-email webhook)
 - `src/components/` — components **two or more** features or pages use
   (`NavBar`, `ProtectedRoute`, `ErrorDialog`, `PasswordInput`);
   `src/components/ui/` — shadcn (generated)
 - `src/features/<domain>/api/` — one file per endpoint, each exporting the hook the
   components call: `get-users.ts` (`useUsers` + the `UserRow` type the response has),
   `create-user.ts`, `update-user.ts`, `delete-user.ts`, and `query-key.ts` holding the
-  `USERS_QUERY_KEY` all four name
+  `USERS_QUERY_KEY` all four name. `features/tickets/api/` holds `get-tickets.ts`
+  (`useTickets` + `TicketRow`) and its own `query-key.ts`; no mutation files yet,
+  because nothing writes a ticket from the UI. **`get-tickets.ts` also hand-writes the
+  `TicketStatus` and `TicketCategory` unions**, the way `UserRow` hand-writes `role`:
+  the client cannot import a Prisma type and `erasableSyntaxOnly` rules out an enum on
+  both sides. Nothing enforces that those literals still match `schema.prisma` — a
+  type-level assertion that did was written and removed the same day for costing more
+  to read than it saved, and the gap is recorded in the root `CLAUDE.md`. `TicketRow.id`
+  is a **number**, unlike `UserRow.id`, because `Ticket.id` is an `Int`.
 - `src/lib/` — `auth-client.ts`, `api.ts` (`API_URL` + the `api` axios instance)
 - `src/test/` — test support, not tests: `setup.ts` (jest-dom matchers + per-test
   cleanup) and `axios-error.ts` (`axiosErrorWithStatus`, the rejection shape the app's
@@ -384,6 +410,9 @@ components/ lib/ test/  →  nothing above them
   importing another feature or a page, the other stops `src/components/**`, `src/lib/**`
   and `src/test/**` from importing either. oxlint has no `import/no-restricted-paths`,
   which is why it is spelled this way.
+- **A new feature needs no config change at all.** Both zones are globs over
+  `**/features/**`, so `features/tickets/` was covered the moment the folder existed —
+  checked when it was added, so nobody goes hunting for a step that is not there.
 - **The patterns read `**/features/**`, not `@/features/**`, and the leading `**` is
   load-bearing.** Written against the alias alone, the rule let
   `../features/users/components/CreateUserDialog` through from `src/components/` — a
