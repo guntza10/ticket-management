@@ -425,6 +425,20 @@ go into `_setup-kit/` until a second project has actually used it.
    needs** calls for, each one proven able to fail; then `clean-code-reviewer`, plus
    `security-reviewer` when the change touched auth or an endpoint; then any CLAUDE.md
    line this work has just made wrong. Ends with a short summary of what each test covers.
+
+   **One agent holds the tree at a time, and this is the step where that bites.**
+   Proving a test can fail means breaking the code it guards and restoring it, so for
+   seconds at a stretch the files on disk are deliberately wrong. On **2026-11-12**
+   `e2e-tester` was doing exactly that while `clean-code-reviewer` and
+   `security-reviewer` read the same files: one reported that `/tickets` had no
+   `ProtectedRoute`, the other that it had `role="admin"` — two different broken states
+   of one file, neither of them real. `oxlint` and `tsc` runs were untrustworthy for the
+   same window, flagging a binding that `grep` found in use a second later. So: **let
+   every writer finish first** — the spec agent, any break-and-restore proof — and only
+   then start the read-only reviewers. Running a reviewer beside a writer is not a
+   speed-up; it buys findings that have to be disproved by hand, and the time to
+   disprove them is longer than the time saved. The matching habit: **open the file
+   before believing a finding about it**, which is how those two were caught.
 5. **Recheck, then commit (the user).** Drive the app properly now that the code is
    stable, and say when to commit.
 
