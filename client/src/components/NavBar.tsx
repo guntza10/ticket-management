@@ -1,8 +1,27 @@
 import { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router";
+import type { NavLinkRenderProps } from "react-router";
+import { cn } from "cn";
 import { signOut, useSession } from "@/lib/auth-client";
 import ErrorDialog from "@/components/ErrorDialog";
 import { Button } from "@/components/ui/button";
+
+// Every nav link styles itself the same way, so the callback is written once.
+//
+// `cn` rather than a ternary returning two whole strings: with it, the classes
+// every state shares are written once and the reader can see at a glance which
+// part changes. The earlier form repeated `text-sm` in both branches, so adding
+// one shared utility meant editing two places and forgetting one was silent.
+// cn is also clsx + tailwind-merge, so the day a branch needs to override a
+// shared utility the later value wins as written, instead of the winner being
+// decided by the order the classes happen to sit in the stylesheet.
+const navLinkClass = ({ isActive }: NavLinkRenderProps) =>
+  cn(
+    "text-sm",
+    isActive
+      ? "font-medium text-foreground"
+      : "text-muted-foreground hover:text-foreground",
+  );
 
 // Rendered only inside a protected route, so a session is guaranteed here.
 export default function NavBar() {
@@ -44,27 +63,13 @@ export default function NavBar() {
               below. Every signed-in role works tickets, so there is nothing to
               hide — dropping this inside that conditional is the mistake to
               avoid, and no type or lint rule would catch it. */}
-          <NavLink
-            to="/tickets"
-            className={({ isActive }) =>
-              isActive
-                ? "text-sm font-medium text-foreground"
-                : "text-sm text-muted-foreground hover:text-foreground"
-            }
-          >
+          <NavLink to="/tickets" className={navLinkClass}>
             Tickets
           </NavLink>
           {/* Admin-only link. Hiding it is UX, not security — the route it
               points to also guards on role, and the server must too. */}
           {session?.user.role === "admin" && (
-            <NavLink
-              to="/users"
-              className={({ isActive }) =>
-                isActive
-                  ? "text-sm font-medium text-foreground"
-                  : "text-sm text-muted-foreground hover:text-foreground"
-              }
-            >
+            <NavLink to="/users" className={navLinkClass}>
               Users
             </NavLink>
           )}
