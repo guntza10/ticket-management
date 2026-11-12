@@ -14,6 +14,9 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
 - `npm run dev:server` — `node --watch` → http://localhost:3000
 - `npm run typecheck:server` — `tsc --noEmit`
 - `npm run db:generate | db:migrate | db:studio | db:seed --workspace server`
+- `npm run db:reseed:tickets --workspace server` — sample tickets for the **dev** DB
+  only. `reseed`, not `seed`: unlike `prisma/seed.ts` it **deletes every ticket** first,
+  so re-running gives the same six rows instead of a growing pile.
 - Test-DB variants: `start:test`, `db:migrate:test`, `db:seed:test`, `db:truncate:test`,
   `db:reset:test`
 

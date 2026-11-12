@@ -14,6 +14,7 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "node --env-file-if-exists=.env prisma/seed.ts",
+    "db:reseed:tickets": "node --env-file-if-exists=.env prisma/seed-tickets.ts",
     "db:migrate:test": "DOTENV_CONFIG_PATH=.env.test prisma migrate deploy",
     "db:seed:test": "node --env-file=.env.test prisma/seed.ts",
     "db:reset:test": "DOTENV_CONFIG_PATH=.env.test prisma migrate reset --force --skip-seed",
