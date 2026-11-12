@@ -28,6 +28,39 @@ test.describe("Route protection — signed out", () => {
     await expect(page).toHaveURL("/login");
     await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
   });
+
+  // /tickets is open to both roles, which is a different thing from being open
+  // to nobody: it is still wrapped in ProtectedRoute, just without a `role`.
+  //
+  // Landing on /login does not on its own prove ProtectedRoute did it. Two
+  // layers send a signed-out visitor there and the URL looks identical from
+  // both: the route guard, which never mounts the page, and the 401
+  // interceptor in client/src/lib/api.ts, which mounts it, lets it ask the
+  // server, and redirects on the refusal. Delete <ProtectedRoute> from this
+  // route and the URL assertion alone still passes — which is the shape of
+  // mistake CLAUDE.md records about this very file.
+  //
+  // So the test watches for the request instead. A guarded route never mounts
+  // TicketsPage, so useTickets never runs and nothing asks /api/tickets. This
+  // is observation, not interception: no page.route(), nothing about the real
+  // flow is altered.
+  test("redirects a signed-out visitor from /tickets to /login", async ({
+    page,
+  }) => {
+    const ticketRequests: string[] = [];
+    page.on("request", (request) => {
+      if (request.url().includes("/api/tickets")) {
+        ticketRequests.push(request.url());
+      }
+    });
+
+    await page.goto("/tickets");
+
+    await expect(page).toHaveURL("/login");
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+    // The assertion that tells the guard from the interceptor.
+    expect(ticketRequests).toEqual([]);
+  });
 });
 
 test.describe("Route protection — signed in", () => {

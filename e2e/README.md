@@ -6,8 +6,19 @@ Current specs:
 
 - `login.spec.ts` — sign-in happy path, inline form validation, rejected
   credentials (error dialog), the password show/hide toggle
-- `route-protection.spec.ts` — signed-out redirects, admin-only `/users`,
-  an agent being sent home, and the role-gated nav link
+- `route-protection.spec.ts` — signed-out redirects (`/`, `/users` and `/tickets`),
+  admin-only `/users`, an agent being sent home, and the role-gated nav link.
+  Worth knowing about the `/tickets` one: a signed-out visitor is sent to `/login` by
+  **two** mechanisms, and it does not distinguish them — removing `ProtectedRoute` from
+  that route leaves it green, because `TicketsPage` then loads, `GET /api/tickets`
+  answers 401 and the interceptor in `client/src/lib/api.ts` does the redirect instead.
+  **Fixed for `/tickets` on 2026-11-12**: that test now also listens for requests and
+  asserts none went to `/api/tickets`, because a guarded route never mounts the page
+  and so never asks. Deleting `<ProtectedRoute>` from the route turns it red —
+  measured, not assumed. It is observation, not `page.route()` interception, so the
+  real flow is untouched. **Its `/` and `/users` siblings still have the weakness**
+  and were left alone as outside that change; give them the same listener when one of
+  them is next touched
 - `session.spec.ts` — session survives a reload; log out really ends it, including
   against the Back button
 - `auth-api.spec.ts` — `GET /api/me` (401 / 200), public sign-up being refused,
@@ -50,6 +61,23 @@ Current specs:
   touched: a wrong secret of **exactly the same length** (without it the byte comparison
   never ran in the whole suite, so a guard that accepted any same-length secret stayed
   green) and a doubled header. The only specs here that never sign in
+- `tickets-api.spec.ts` — `GET /api/tickets` without a browser: 401 with no session,
+  200 for an **agent** (the test that pins this as the first route guarded by
+  `requireAuth` alone — add `requireAdmin` and four of its six go red), 200 for an
+  admin, the exact seven-key set on every row, that no row carries `body` or
+  `bodyHtml`, and that a newer ticket is listed before an older one. The field-set loop
+  is the only thing in the repo stopping someone widening the route's `select` into the
+  webhook's `PUBLIC_TICKET_FIELDS`
+- `tickets-list.spec.ts` — `/tickets` in a browser: an **agent** (not an admin) follows
+  the nav link to the list and finds a ticket that arrived by email, with its sender
+  address and the status rendered as **"Open"** rather than the raw enum `open`; the
+  body of that email is nowhere on the page, which is `GET /api/tickets` leaving `body`
+  and `bodyHtml` out of its select, seen from the outside; and an admin gets the same
+  link and the same page, since this is the first route guarded by `requireAuth` alone.
+  Every ticket it reads is seeded over HTTP through the webhook first — a ticket has no
+  other writer. Two things it deliberately never touches: the **Created** cell, which
+  renders through `toLocaleDateString()` and so depends on the machine's locale and
+  timezone, and how many rows the table has
 
 The `trustedOrigins` tests only work because `server/src/auth.ts` sets
 `advanced: { disableOriginCheck: false }`. Better Auth otherwise defaults that check
@@ -63,10 +91,15 @@ over HTTP (`createUserViaApi`), and holds `ALLOWED_FIELDS`, the key set both
 spec, so Playwright does not collect them.
 
 `support/inbound-email.ts` does the same job for the webhook: `postInboundEmail` posts
-one email (with the secret, with a wrong one, or with none), `validEmail` builds a
+one email (with the secret, with a wrong one, or with none), `newInboundEmail` builds a
 complete body to spread and override, `newSubject`/`newSenderEmail` make both halves of
 the duplicate guard's match unique per spec, and `ALLOWED_TICKET_FIELDS` is the key set
-every answer is checked against. It **spells the test secret out** rather than importing
+the **webhook's** answers are checked against. `tickets-api.spec.ts` keeps its own,
+narrower `ALLOWED_TICKET_LIST_FIELDS` **inside the spec file**, deliberately: the two
+lists are different on purpose, and `ALLOWED_FIELDS` only lives in `support/` because
+*two* spec files assert it. Promote it the day a second ticket spec needs the same set.
+`newInboundEmail` + `sendEmailExpectingNewTicket` are also how the list specs get rows
+to read — a ticket has no writer but the webhook. It **spells the test secret out** rather than importing
 what the server reads — same reason `ALLOWED_FIELDS` is hand-written: a spec that reads
 the value under test can never notice that value being wrong.
 
@@ -83,9 +116,15 @@ bearing:
 
 1. Name every row you create with `newUserEmail()` from `support/users.ts`. It uses a
    UUID, not a timestamp, because five workers can start inside the same millisecond.
-2. Never assert a roster length, a row count or an ordering. Assert that the rows you
-   care about are present — `users-api.spec.ts` uses `expect.arrayContaining` and a
-   per-row key-set loop for exactly this reason.
+2. Never assert a length, a count, an **absolute** position, or anything about the head
+   of a list. Assert that the rows you care about are present — `users-api.spec.ts`
+   uses `expect.arrayContaining` and a per-row key-set loop for exactly this reason.
+   **Ordering is assertable, but only between rows the spec created itself**, by
+   comparing their positions: `tickets-api.spec.ts` proves `GET /api/tickets` is
+   newest-first with `ids.indexOf(newer) < ids.indexOf(older)` on two tickets it posted
+   seconds apart. `tickets[0]` would be another worker's row half the time. This rule
+   read "never assert … an ordering" until 2026-11-12, which would have forbidden the
+   one test that holds the list's order up.
 3. Prove identity by comparing ids, never by counting. The webhook specs are the ones
    that forced this: "the follow-up joined the ticket I just made" is
    `second.id === first.id`, and "these are two tickets" is `not.toBe`. Both survive
