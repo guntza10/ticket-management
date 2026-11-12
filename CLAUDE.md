@@ -65,8 +65,51 @@ server enables CORS (client origin + credentials). Details in the workspace file
 - **Skills:** vendored as real files under `.claude/skills/` (committed). `.agents/` is gitignored; `skills-lock.json` is the source of truth.
 - **Secrets:** never commit. Use `.env` (gitignored) + `.env.example`, and expand env vars in configs (e.g. `.mcp.json`).
 - **Clean TypeScript is enforced** on every `.ts`/`.tsx` edit by a `PostToolUse` hook (`.claude/hooks/ts-check.sh`) that runs oxlint + `tsc` for the touched workspace and reports failures back. Rule sets live in the workspace files. This is the **objective** layer (deterministic, hard gate).
-- **Subjective clean-code** (naming, single-responsibility, abstraction, readability) — what the linter can't judge — is reviewed by the **`clean-code-reviewer` subagent**. Invoke it after writing a meaningful chunk of TS (a component / module / feature) or before a commit — **not** on every edit (a per-edit LLM review is slow and can loop). It's read-only; apply its findings yourself.
+- **Subjective clean-code** (naming, single-responsibility, abstraction, readability) — what the linter can't judge — is reviewed by the **`clean-code-reviewer` subagent**. Invoke it after writing a meaningful chunk of TS (a component / module / feature) or before a commit — **not** on every edit (a per-edit LLM review is slow and can loop). It's read-only; apply its findings yourself. The rules it works to — and any other reviewer works to — are in **Reviewing code here** below. `mattpocock-skills:code-review` is run beside it for now and reviews on two axes ours has no concept of: whether a *documented standard was rewritten* to permit the change, and whether the change matches what was actually asked for.
 - **Reusable setup kit:** generalizable governance/config (the clean-TS hook, reviewer agents, lint/tsconfig) is captured in `~/Desktop/Practice/_setup-kit/`. When a new reusable piece is built here — e.g. the **Playwright + testing-agent** testing layer (course lessons 16–20) — `cp` it into the kit's `templates/` and note it in the kit's README.
+
+## Reviewing code here
+
+These bind **any** reviewer — the `clean-code-reviewer` subagent, an outside
+skill, or a person reading a diff. They live here rather than inside an agent's
+own file on purpose: a rule locked in one agent's definition is checked only
+when that agent runs, and on 2026-11-13 a second reviewer found a stale line in
+this very table that ours had no reason to look for.
+
+### A comment may not claim more than the code does
+
+If a comment says a mistake would be caught, it has to name the thing that
+catches it, and that thing has to have been checked. **This repo has shipped the
+opposite three times**, which is why it is a rule and not an anecdote:
+
+1. `client/CLAUDE.md` said a half-added column would need "new counts in the
+   test", while every test counted `row` and none counted `cell` (2026-11-02).
+2. A `Record` map's comment read as though it guarded a status added to
+   `schema.prisma`. It only fires once somebody has already edited the client's
+   union — which is the step that gets forgotten (2026-11-12).
+3. A type-level assertion's comment said it caught a member "gained **or
+   lost**". Measured: losing one left it silent (2026-11-12).
+
+The check is mechanical: find the test, type or lint rule the sentence is
+promising, and break the code to watch it fire. If nothing fires the comment is
+wrong — then say what is **not** covered, which is worth more than silence.
+
+### What a review covers, and what it leaves alone
+
+- Only lines the change **added or modified**. Read around them for context;
+  report on them.
+- **Never** `server/src/generated/**` (Prisma output) or
+  `client/src/components/ui/**` (shadcn) — generated, and already in the lint
+  ignore lists.
+- **Do not report** what oxlint or `tsc` already gates, security (its own
+  reviewer owns that), formatting, or a nit whose payoff cannot be stated.
+
+### How a finding is written
+
+`**Now:**` what the code does today · `**Cleaner:**` the specific change ·
+`**Why:**` what it buys. A finding that cannot fill the third line is not one.
+Reviewers here are read-only and the fix is applied by hand, because applying it
+is where the learning is.
 
 ## Testing (component)
 
@@ -587,7 +630,7 @@ is what will make it start hurting; revisit when you hit it.
 | **Specs run 5-way parallel against one shared test DB,** and `globalSetup` truncates once per run rather than per spec — so a row one worker creates is visible to every other. | **Already fired**, with create-user. | Resolved without `workers: 1`: every created row takes its address from `newUserEmail()` in `e2e/support/users.ts` (a UUID — five workers can share a millisecond), and no spec asserts a roster length, count or order. Keep both rules when adding specs that write. |
 | **The app's own mutating routes have no rate limit**, and the webhook's secret can therefore be guessed at indefinitely. A refusal is now `console.warn`ed (added 2026-11-10) so it is at least visible, but nothing stops it. Better Auth's limiter covers `/api/auth/*` only. | **Already fired, and wider than this row used to say.** It read "a second admin-reachable write endpoint"; the webhook is a second mutating endpoint reachable with **no session at all**, only a shared secret — so anyone holding that secret can create tickets without limit. | Still the same answer: a limiter in front of the app's own mutating routes rather than bolted onto one endpoint. Do it when the webhook is exposed to the internet, which is the same moment a real mail provider is wired up. |
 | **Two list endpoints return every row, unpaginated** — `GET /api/users` and, since 2026-11-11, `GET /api/tickets`. Fine at three rows and six. | Different for each, and the ticket one is much nearer: a roster only grows when an admin adds somebody, while the ticket table grows from **`POST /api/webhooks/inbound-email`, which has no rate limit** (its own row above) — so anyone holding that secret can inflate what every agent's page load then reads in full, over an `ORDER BY createdAt` with no index behind it. | Add `take`/`skip` (or cursor) + a total count, and paginate both tables. **Do the tickets one before a real mail provider is connected**, which is the same moment the webhook stops being reachable only by us — not "when the list feels long". The `createdAt` index lands with it; `schema.prisma` records that trigger on the model. |
-| **No catch-all route.** `App.tsx` has `/login`, `/`, `/users` and nothing else, so an unknown URL renders a blank page. | Anyone mistyping a URL; more so once there are more routes. | Add a `*` route with a 404 page, then a spec for it. |
+| **No catch-all route.** `App.tsx` has `/login`, `/`, `/users`, `/tickets` and nothing else, so an unknown URL renders a blank page. | Anyone mistyping a URL; more so once there are more routes — and the list grows every phase. | Add a `*` route with a 404 page, then a spec for it. |
 | **No "return to intended page" after sign-in.** A signed-out visit to `/users` lands on `/` after login, not `/users`. | Deep links being shared, or any flow that sends users to a specific page. | Have `ProtectedRoute` record the attempted path and `LoginPage` honour it. |
 | **Form fields carry no `aria-describedby`,** so a validation message is announced when it appears (`FieldError` is `role="alert"`) but is not read out when the field is focused again — a screen reader hears "invalid" with no reason. Every documented shadcn `Field` example omits it too; the retired `form.tsx` was the only thing that ever wired it. | An accessibility pass, or the third or fourth form — at which point the wiring is worth centralising. | Give `FieldError` an `id` and point the control's `aria-describedby` at it (unconditionally: `FieldError` renders nothing when empty, and a dangling reference is ignored). A shared wrapper to derive those ids was built and reverted once already — if it comes back, it should come back because several forms need it, not to satisfy a line-count rule. |
 | **Changing a password does not end that user's sessions.** Better Auth's sessions are rows keyed by token, not by the password hash, so an admin resetting an agent's password leaves anyone already signed in as that agent signed in. | Any sign a password is being reset *because* an account is compromised — or a "sign out everywhere" button, which is the same mechanism. | Delete that user's `session` rows in the same transaction as the password write in `server/src/users/update-user.ts`, and add an API spec that proves the old cookie stops working. **`server/src/users/delete-user.ts` now does exactly that**, so this is a copy of a working mechanism from the file next door rather than new work. Still decided against (2026-10-23): it is a second concern inside an edit form, and the honest version needs a way to tell "reset because compromised" from "reset because forgotten". |

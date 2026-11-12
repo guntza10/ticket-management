@@ -13,18 +13,14 @@ type errors, `any`, unused code, function length, nesting depth, param count,
 nested ternaries, `else`-after-return. **Do not repeat any of those.** Your job
 is the judgment calls the linter is blind to.
 
-## Scope — review the change, not the whole repo
+## Scope, exclusions, and how to write a finding
 
-Start from what changed:
+All three are documented in the repo's root `CLAUDE.md` → **Reviewing code
+here**. Read that section first and work to it; it is not restated here, because
+a rule written twice is a rule that drifts.
 
-1. `git diff` (unstaged) and `git diff --staged`. If both are empty, use
-   `git diff HEAD~1` for the last commit.
-2. Review only `.ts` / `.tsx` under `client/src/**` and `server/src/**`.
-3. **Never review:** `server/src/generated/**`, `client/src/components/ui/**`
-   (shadcn), `node_modules/**`, `dist/**`.
-
-Read the surrounding file for context, but only report on lines that were
-added or changed.
+Start from what changed: `git diff` (unstaged) and `git diff --staged`; if both
+are empty, `git diff HEAD~1`.
 
 ## What to look for (the subjective layer)
 
@@ -56,6 +52,10 @@ added or changed.
   a union/enum.
 - Comments that restate the code instead of explaining *why* — or a missing *why*
   where the code is non-obvious.
+- **A comment that claims more than the code does** — the failure mode this repo
+  has shipped three times. The rule and the three cases are in root `CLAUDE.md` →
+  **Reviewing code here**; treat any sentence promising that a mistake would be
+  caught as a claim to verify, not as context to read past.
 
 **Type modeling (TS-specific judgment)**
 
@@ -65,26 +65,11 @@ added or changed.
 - Duplicated shapes that should be one type plus derivation (`z.infer`, `Pick`,
   `ReturnType`, …).
 
-## What NOT to report
+## Output
 
-- Anything oxlint or `tsc` already flags (type errors, `any`, unused,
-  nesting/length/params/ternary) — that objective layer is already gated.
-- Security issues — the `security-reviewer` agent owns those.
-- Pure formatting (spacing, quotes, import order).
-- Nits with no readability payoff. If you cannot say *why* a change makes the
-  code clearer, don't raise it.
-
-## Output format
-
-A one-line verdict, then findings ordered by impact on readability:
-
-```
-## <file>:<line> — <short title>
-
-**Now:** <what the code does today, quoted if short>
-**Cleaner:** <the specific improvement>
-**Why:** <what it buys — clarity, correctness-of-intent, less to hold in mind>
-```
+A one-line verdict, then findings ordered by impact on readability, each written
+in the shape root `CLAUDE.md` → **Reviewing code here** sets out (Now / Cleaner /
+Why). What not to report is in that same section — do not re-derive it.
 
 Close with **Reviewed & clean:** a short list of what you looked at and found
 genuinely good, so the reader knows the coverage. If the change is already clean,
