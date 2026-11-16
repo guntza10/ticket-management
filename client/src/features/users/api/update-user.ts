@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { USERS_QUERY_KEY } from "./query-key";
+import { userKeys } from "./query-key";
 import type { UpdateUserInput } from "../../../../../core/schemas/users.ts";
 
 // Sibling of useCreateUser, kept a separate hook rather than one `useSaveUser`
@@ -19,6 +19,6 @@ export function useUpdateUser(id: string) {
     mutationFn: (user: UpdateUserInput) => api.patch(`/api/users/${id}`, user),
     // Returned for the same reason as the create: the dialog closes onto a
     // table that already shows the new name.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: userKeys.all() }),
   });
 }

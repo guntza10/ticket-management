@@ -249,7 +249,7 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   be able to leave it out, and one input type loose enough for both would throw away the
   guarantee the create path depends on (measured: merging them makes the create call
   need a cast or a second `parse`). It posts, then `onSuccess` **returns**
-  `queryClient.invalidateQueries({ queryKey: ["users"] })` — returning it makes
+  `queryClient.invalidateQueries({ queryKey: userKeys.all() })` — returning it makes
   `mutateAsync` settle only after the roster has
   refetched, so the dialog closes onto a table that already holds the new row instead of
   racing it. Name a different key and the table keeps showing the roster from before.
@@ -377,15 +377,50 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - `src/features/<domain>/api/` — one file per endpoint, each exporting the hook the
   components call: `get-users.ts` (`useUsers` + the `UserRow` type the response has),
   `create-user.ts`, `update-user.ts`, `delete-user.ts`, and `query-key.ts` holding the
-  `USERS_QUERY_KEY` all four name. `features/tickets/api/` holds `get-tickets.ts`
-  (`useTickets` + `TicketRow`) and its own `query-key.ts`; no mutation files yet,
-  because nothing writes a ticket from the UI. **`get-tickets.ts` also hand-writes the
-  `TicketStatus` and `TicketCategory` unions**, the way `UserRow` hand-writes `role`:
-  the client cannot import a Prisma type and `erasableSyntaxOnly` rules out an enum on
-  both sides. Nothing enforces that those literals still match `schema.prisma` — a
-  type-level assertion that did was written and removed the same day for costing more
-  to read than it saved, and the gap is recorded in the root `CLAUDE.md`. `TicketRow.id`
-  is a **number**, unlike `UserRow.id`, because `Ticket.id` is an `Int`.
+  `userKeys` factory all four name. `features/tickets/api/` holds `get-tickets.ts`
+  (`useTickets` + `TicketRow`) and its own `query-key.ts` exporting `ticketKeys`; no
+  mutation files yet, because nothing writes a ticket from the UI. **`get-tickets.ts`
+  also hand-writes the `TicketStatus` and `TicketCategory` unions**, the way `UserRow`
+  hand-writes `role`: the client cannot import a Prisma type and `erasableSyntaxOnly`
+  rules out an enum on both sides. Nothing enforces that those literals still match
+  `schema.prisma` — a type-level assertion that did was written and removed the same day
+  for costing more to read than it saved, and the gap is recorded in the root
+  `CLAUDE.md`. `TicketRow.id` is a **number**, unlike `UserRow.id`, because `Ticket.id`
+  is an `Int`.
+- **A feature's keys live in one `query-key.ts` object — a query factory** — which is
+  the shape TanStack Query's own docs use (`all()`, `list()`, later `detail(id)`), and
+  both features were converted to it on 2026-11-14. Two loose exports, a `SCREAMING_SNAKE`
+  const for the prefix beside a `camelCase` function for the list, cannot be discovered
+  from one another and read as two unrelated things; `userKeys.` lists every key the
+  feature has.
+  - **`list()` spreads `all()`, and that relationship is the whole mechanism.** The
+    mutations invalidate `all()`; the readers read `list()`. React Query matches a key by
+    prefix, so one invalidation clears every variant — every sort today, a
+    `detail(id)` later — without a mutation being touched.
+  - **It is guarded by a test, because nothing else could see it.** Before the split, the
+    read key and the invalidated key were the same array and could not drift. Afterwards
+    they are two values related only by prefix: measured on 2026-11-14, making `list()`
+    stop spreading `all()` left **all 83 component specs green** while in a browser a
+    created user would have left the table showing the roster from before.
+    `api/query-key.test.ts` in each feature now closes that, asserted through a real
+    `QueryClient` rather than by comparing array prefixes by hand — the rule under test is
+    React Query's matching, not ours.
+  - **A ticket list key carries the sort** (`["tickets", "list", { sortBy, sortOrder }]`),
+    because the server decides the order, so each sort is a different answer and a
+    different cache entry. The query object goes in as **one element** rather than spread
+    into several: object key order does not affect the hash, array item order does.
+  - **The `"list"` segment is there before `detail` exists**, deliberately. Without it a
+    list key and a detail key are both two elements long — `["tickets", { sortBy }]`
+    against `["tickets", 17]` — which still hash apart but leave no way to invalidate only
+    the lists. Adding it later would change every cache key in flight.
+  - **`queryOptions()` is deliberately not adopted yet.** It would bundle `queryFn` in
+    beside the key, so the two could never be paired wrongly — but today each key and its
+    fetcher already sit in one function in one file. **Trigger: the first mutation that
+    calls `setQueryData`, or prefetching on hover** — the first time something outside
+    `get-*.ts` needs the same pair.
+  - `useTickets` also sets `placeholderData: keepPreviousData`, which is what makes a sort
+    click look like a sort: without it the key changes, React Query has no data for the new
+    one, and the table falls back to its skeleton for a round trip.
 - `src/lib/` — `auth-client.ts`, `api.ts` (`API_URL` + the `api` axios instance)
 - `src/test/` — test support, not tests: `setup.ts` (jest-dom matchers + per-test
   cleanup) and `axios-error.ts` (`axiosErrorWithStatus`, the rejection shape the app's

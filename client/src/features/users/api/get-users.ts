@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { USERS_QUERY_KEY } from "./query-key";
+import { userKeys } from "./query-key";
 
 // Mirrors the `select` in GET /api/users. createdAt is a string, not a Date:
 // JSON has no date type, so Prisma's DateTime arrives here as an ISO string —
@@ -35,7 +35,7 @@ async function getUsers(signal: AbortSignal): Promise<UserRow[]> {
 /** The roster. The two mutations in this folder invalidate the same key. */
 export function useUsers() {
   return useQuery({
-    queryKey: USERS_QUERY_KEY,
+    queryKey: userKeys.list(),
     queryFn: ({ signal }) => getUsers(signal),
   });
 }

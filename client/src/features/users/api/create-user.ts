@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { USERS_QUERY_KEY } from "./query-key";
+import { userKeys } from "./query-key";
 import type { CreateUserInput } from "../../../../../core/schemas/users.ts";
 
 // The write and the cache it has to refresh, named as one thing: at the call
@@ -18,6 +18,6 @@ export function useCreateUser() {
     // Returned, not fired and forgotten. mutateAsync then settles only once the
     // roster has actually refetched, so the dialog closes onto a table that
     // already holds the new row instead of racing it.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: userKeys.all() }),
   });
 }
