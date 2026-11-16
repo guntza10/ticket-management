@@ -4,7 +4,8 @@ Checklist tasks **mirror the course exactly** (`_resources/prototype/implementat
 so the build videos line up. Anything **we** add is pulled out as a separate
 `[ours]` note under each phase — never mixed into the course's task lines.
 
-Legend: 🔴 must-have · 🟡 important · 🟢 later
+Legend: 🔴 must-have · 🟡 important · 🟢 later · `[~]` = partly done, with the
+unfinished half named on the line itself
 
 ---
 
@@ -54,7 +55,11 @@ Legend: 🔴 must-have · 🟡 important · 🟢 later
 - [x] Implement list tickets API endpoint — `GET /api/tickets`, newest first, **no query
       parameters at all**, guarded by `requireAuth` alone (both roles). Its own allow-list,
       narrower than the webhook's: no `body`, no `bodyHtml`
-- [ ] Add filtering (status, category) and sorting to the list endpoint
+- [~] Add filtering (status, category) and sorting to the list endpoint — **sorting
+      done** 2026-11-13: `?sortBy=` + `?sortOrder=` over five columns, validated against
+      `TICKET_SORT_FIELDS` in `core/schemas/tickets.ts`, `400 invalid_query` outside it,
+      `id desc` as a second key on every answer. **Filtering is not done** and is the
+      next unit
 - [ ] Implement get ticket API endpoint
 - [ ] Implement update ticket API endpoint (change status, assign agent)
 - [x] Create ticket list page — a table at `/tickets`, newest first, no controls

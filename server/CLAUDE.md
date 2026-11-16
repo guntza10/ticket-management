@@ -406,13 +406,54 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
   **Move both into `src/tickets/ticket-fields.ts`, renaming `PUBLIC_TICKET_FIELDS` in the
   same go, the day `GET /api/tickets/:id` wants the full shape** — a genuine second
   reader across files is the trigger, not a line count.
-- **Newest first, with no query parameters at all.** The order is the server's so the
-  client never re-sorts: two places deciding one order is how they come to disagree, and
-  the server is the one that can still be right once this list is paginated. Sorting,
-  filtering, search and pagination are later units; a parameter nothing sends is a
-  contract with no reader and would need its own validation and specs to mean anything.
-- **Nothing indexes `createdAt`**, by the same rule as the other Ticket columns — the
-  trigger is a measured slow query or pagination, not the first `ORDER BY`.
+- **`?sortBy=` and `?sortOrder=` are the app's first query parameters** (2026-11-13),
+  and they are the whole of what the caller may ask for — no filtering, no search, no
+  pagination yet. The order is still the server's: the client names a column and a
+  direction, never an arrangement of rows. Two places deciding one order is how they come
+  to disagree, and the server is the one that can still be right once this list is
+  paginated — a client sorting what it was sent can only sort the page it can see.
+  - **The allow-list lives in `core/schemas/tickets.ts`, and what both workspaces share
+    is the schema, not the array.** `ticketListQuerySchema` is exported and has a reader
+    on each side — the server `safeParse`s `req.query` with it, the client parses the
+    URL's search params with it before building a request — which is what earns the file
+    its place in `core/`, unlike `TicketStatus` / `TicketCategory` with one reader per
+    side. `TICKET_SORT_FIELDS` itself is **not** exported: its only reader is the
+    `z.enum` beside it, and `TicketSortField` is the half that travels (to `ORDER_BY`
+    here). Export the array the day something outside that file needs the list as a
+    value — a filter dropdown built from it is the likely one.
+  - **A value outside the allow-list is `400 invalid_query`, not a silent default.**
+    Same shape a body gets: zod refuses a value outside an enum and the route answers a
+    code. Defaulting quietly would let a client ship `?sortBy=createdat` and read a list
+    that looks right for months.
+  - **`ORDER_BY` is a `Record<TicketSortField, …>` of one small function per column**,
+    not `{ [sortBy]: sortOrder }`. A computed key type-checks against anything, so a
+    field added to the schema and forgotten here would reach Prisma as a key the model
+    does not have. Measured 2026-11-13: adding a sixth member gives
+    `TS2741: Property 'senderEmail' is missing`, which names the member. Removing
+    `as const` from the array does **not** fail at `z.enum` (zod's parameter is
+    `const T extends readonly string[]`, which `string[]` satisfies) nor at the `Record`
+    declaration — it fails at `ORDER_BY[sortBy](…)` with
+    `TS2722: Cannot invoke an object which is possibly 'undefined'`, and only because
+    `noUncheckedIndexedAccess` is on.
+  - **`id` descending is a second sort key on every answer.** `status` and `category`
+    hold three values each, so sorting by them leaves large groups whose internal order
+    Postgres never promises — the same request can answer the same rows in a different
+    order twice. That was a deliberate change to this endpoint's contract; the comment in
+    `e2e/tickets-api.spec.ts` that warned against making it was updated in the same commit.
+  - **`category` sorts `nulls: "last"` both ways.** Postgres puts nulls last on ASC and
+    first on DESC, so the default would open a descending category sort with every
+    ticket nobody has classified — which reads as a fault, not a sort.
+  - **A native Postgres enum sorts in the order its members are declared**, not
+    alphabetically, so `status asc` reads `open → resolved → closed`. That happens to be
+    the workflow order; it is not something the route arranges.
+  - **`status` and `category` sort order is not provable at the API layer yet.** The
+    webhook is the only way a spec can create a ticket and it always writes `open` with
+    no category, so the two specs for those columns assert only that the column is
+    accepted. It becomes assertable with `PATCH /api/tickets/:id`.
+- **Nothing indexes any sortable column**, by the same rule as the other Ticket columns —
+  the trigger is a measured slow query or pagination, not the first `ORDER BY`. There are
+  five of them now rather than one, which does not change the rule but is worth knowing
+  before reading the note on the model.
 - **The status and category values are hand-written again on the client**
   (`client/src/features/tickets/api/get-tickets.ts`), because it cannot import a Prisma
   type and `erasableSyntaxOnly` rules out an enum on both sides. **Nothing enforces that
@@ -431,8 +472,12 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
 
 - **Every error answers `{ error: "<snake_case_code>" }`.** In use: `unauthenticated`
   (401), `invalid_webhook_secret` (401), `forbidden` (403), `admin_not_deletable` (403),
-  `invalid_body` (400), `user_not_found` (404), `email_taken` (409),
+  `invalid_body` (400), `invalid_query` (400), `user_not_found` (404), `email_taken` (409),
   `internal_error` (500).
+  `invalid_body` and `invalid_query` are both 400 and both come from a failed
+  `safeParse`; they differ in *where* the caller has to look — a JSON body or the query
+  string. `GET /api/tickets` is the only route with the second one, because it is the
+  only route that reads `req.query` at all.
   Two codes share 401 as well: `unauthenticated` means no session was presented,
   `invalid_webhook_secret` means no session was *looked for* — a client should be able to
   tell which door turned it away.

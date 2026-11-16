@@ -30,8 +30,11 @@ const ALLOWED_TICKET_LIST_FIELDS = [
   "subject",
 ];
 
-async function readTicketList(request: APIRequestContext) {
-  const response = await request.get(TICKETS_URL);
+async function readTicketList(
+  request: APIRequestContext,
+  params?: Record<string, string>,
+) {
+  const response = await request.get(TICKETS_URL, params && { params });
 
   // Asserted here so a failure lands on the line that broke rather than later
   // on a confusing `undefined`.
@@ -119,9 +122,12 @@ test.describe("Tickets API — what the list returns", () => {
   // be wrong from the first parallel run.
   //
   // The two POSTs are awaited in turn, so they are milliseconds apart and
-  // `createdAt` separates them. `orderBy` has no tiebreaker, so if this ever
-  // flakes the answer is to read the failure first — adding `id` as a secondary
-  // sort would be a change to the endpoint's contract, not a test fix.
+  // `createdAt` separates them anyway. Since 2026-11-13 the endpoint also sorts
+  // by `id` descending behind whichever column was asked for, so two rows
+  // written inside the same millisecond still come back newest-first. That was
+  // a deliberate change to this endpoint's contract — this comment used to warn
+  // against making it, because sorting by `status` or `category` leaves groups
+  // of three values whose internal order Postgres never promised.
   test("lists a newer ticket before an older one", async ({ request }) => {
     const older = await sendEmailExpectingNewTicket(
       request,
@@ -138,5 +144,166 @@ test.describe("Tickets API — what the list returns", () => {
     expect(ids).toContain(older.id);
     expect(ids).toContain(newer.id);
     expect(ids.indexOf(newer.id)).toBeLessThan(ids.indexOf(older.id));
+  });
+});
+
+test.describe("Tickets API — sorting the list", () => {
+  // Two tickets whose subjects bracket every other row in the database. Sorting
+  // is a property of the whole table and five workers are writing to it, so the
+  // only assertable claim is where these two sit relative to each other — the
+  // same rule every other ticket spec follows.
+  async function createBracketingSubjects(request: APIRequestContext) {
+    const run = crypto.randomUUID();
+    const first = await sendEmailExpectingNewTicket(request, {
+      ...newInboundEmail("sort-subject-a"),
+      subject: `AAA sorting ${run}`,
+    });
+    const last = await sendEmailExpectingNewTicket(request, {
+      ...newInboundEmail("sort-subject-z"),
+      subject: `ZZZ sorting ${run}`,
+    });
+
+    return { first, last };
+  }
+
+  test("sorts by subject ascending when asked", async ({ request }) => {
+    const { first, last } = await createBracketingSubjects(request);
+
+    await signInViaApi(request, AGENT);
+    const ids = (
+      await readTicketList(request, { sortBy: "subject", sortOrder: "asc" })
+    ).map((ticket) => ticket.id);
+
+    expect(ids.indexOf(first.id)).toBeLessThan(ids.indexOf(last.id));
+  });
+
+  // The same two rows read the other way round. Without this, a route that
+  // ignored `sortOrder` entirely and always sorted ascending would pass the
+  // test above.
+  test("sorts by subject descending when asked", async ({ request }) => {
+    const { first, last } = await createBracketingSubjects(request);
+
+    await signInViaApi(request, AGENT);
+    const ids = (
+      await readTicketList(request, { sortBy: "subject", sortOrder: "desc" })
+    ).map((ticket) => ticket.id);
+
+    expect(ids.indexOf(last.id)).toBeLessThan(ids.indexOf(first.id));
+  });
+
+  // Sender is two columns in one table cell — the name above, the address
+  // below — and only `senderName` is sortable. This is the test that would go
+  // red if ORDER_BY reached for `senderEmail` instead.
+  test("sorts by sender name, not sender address", async ({ request }) => {
+    const run = crypto.randomUUID();
+    const first = await sendEmailExpectingNewTicket(request, {
+      ...newInboundEmail("sort-sender-a"),
+      fromName: `AAA Sender ${run}`,
+      from: `zzz-${run}@test.local`,
+    });
+    const last = await sendEmailExpectingNewTicket(request, {
+      ...newInboundEmail("sort-sender-z"),
+      fromName: `ZZZ Sender ${run}`,
+      from: `aaa-${run}@test.local`,
+    });
+
+    await signInViaApi(request, AGENT);
+    const ids = (
+      await readTicketList(request, { sortBy: "senderName", sortOrder: "asc" })
+    ).map((ticket) => ticket.id);
+
+    expect(ids.indexOf(first.id)).toBeLessThan(ids.indexOf(last.id));
+  });
+
+  test("sorts by createdAt ascending when asked", async ({ request }) => {
+    const older = await sendEmailExpectingNewTicket(
+      request,
+      newInboundEmail("sort-oldest"),
+    );
+    const newer = await sendEmailExpectingNewTicket(
+      request,
+      newInboundEmail("sort-newest"),
+    );
+
+    await signInViaApi(request, AGENT);
+    const ids = (
+      await readTicketList(request, { sortBy: "createdAt", sortOrder: "asc" })
+    ).map((ticket) => ticket.id);
+
+    expect(ids.indexOf(older.id)).toBeLessThan(ids.indexOf(newer.id));
+  });
+
+  // `status` and `category` are accepted sort columns, and that is *all* these
+  // two prove. The webhook is the only way a spec can create a ticket and it
+  // always writes `open` with no category, so every row this suite can make
+  // sorts identically — the order itself only becomes assertable when
+  // PATCH /api/tickets/:id arrives. Drop either name from TICKET_SORT_FIELDS
+  // and the matching test goes red on a 400, which is worth having.
+  for (const sortBy of ["status", "category"]) {
+    test(`accepts ${sortBy} as a sort column`, async ({ request }) => {
+      await sendEmailExpectingNewTicket(request, newInboundEmail(`sort-${sortBy}`));
+
+      await signInViaApi(request, AGENT);
+      const tickets = await readTicketList(request, { sortBy, sortOrder: "asc" });
+
+      for (const ticket of tickets) {
+        expect(Object.keys(ticket).sort()).toEqual(ALLOWED_TICKET_LIST_FIELDS);
+      }
+    });
+  }
+
+  // Sorting must not widen what a row carries. The allow-list and the order by
+  // are two lines of the same Prisma call, and the easiest way to "add sorting"
+  // wrongly is to rewrite that call from scratch and lose the select.
+  test("a sorted answer carries the same fields as an unsorted one", async ({
+    request,
+  }) => {
+    await sendEmailExpectingNewTicket(request, newInboundEmail("sorted-fields"));
+
+    await signInViaApi(request, AGENT);
+    const tickets = await readTicketList(request, {
+      sortBy: "subject",
+      sortOrder: "asc",
+    });
+
+    for (const ticket of tickets) {
+      expect(Object.keys(ticket).sort()).toEqual(ALLOWED_TICKET_LIST_FIELDS);
+    }
+  });
+});
+
+test.describe("Tickets API — what the list refuses", () => {
+  // A column outside the allow-list is refused rather than quietly replaced by
+  // the default. Defaulting would let a client ship `?sortBy=createdat` and
+  // read a list that looks right for months.
+  test("refuses a column it does not sort by", async ({ request }) => {
+    await signInViaApi(request, AGENT);
+    const response = await request.get(TICKETS_URL, {
+      params: { sortBy: "bodyHtml" },
+    });
+
+    expect(response.status()).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_query" });
+  });
+
+  test("refuses a direction that is not asc or desc", async ({ request }) => {
+    await signInViaApi(request, AGENT);
+    const response = await request.get(TICKETS_URL, {
+      params: { sortBy: "subject", sortOrder: "sideways" },
+    });
+
+    expect(response.status()).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_query" });
+  });
+
+  // 401 before 400: the guard is on the router, so a caller with no session
+  // never learns whether its query string was valid.
+  test("asks for a session before it reads the query", async ({ request }) => {
+    const response = await request.get(TICKETS_URL, {
+      params: { sortBy: "bogus" },
+    });
+
+    expect(response.status()).toBe(401);
+    expect(await response.json()).toEqual({ error: "unauthenticated" });
   });
 });
