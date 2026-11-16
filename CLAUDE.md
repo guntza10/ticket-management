@@ -65,7 +65,7 @@ server enables CORS (client origin + credentials). Details in the workspace file
 - **Skills:** vendored as real files under `.claude/skills/` (committed). `.agents/` is gitignored; `skills-lock.json` is the source of truth.
 - **Secrets:** never commit. Use `.env` (gitignored) + `.env.example`, and expand env vars in configs (e.g. `.mcp.json`).
 - **Clean TypeScript is enforced** on every `.ts`/`.tsx` edit by a `PostToolUse` hook (`.claude/hooks/ts-check.sh`) that runs oxlint + `tsc` for the touched workspace and reports failures back. Rule sets live in the workspace files. This is the **objective** layer (deterministic, hard gate).
-- **Subjective clean-code** (naming, single-responsibility, abstraction, readability) — what the linter can't judge — is reviewed by the **`clean-code-reviewer` subagent**. Invoke it after writing a meaningful chunk of TS (a component / module / feature) or before a commit — **not** on every edit (a per-edit LLM review is slow and can loop). It's read-only; apply its findings yourself. The rules it works to — and any other reviewer works to — are in **Reviewing code here** below. `mattpocock-skills:code-review` is run beside it for now and reviews on two axes ours has no concept of: whether a *documented standard was rewritten* to permit the change, and whether the change matches what was actually asked for.
+- **Subjective clean-code** (naming, single-responsibility, abstraction, readability) — what the linter can't judge — is reviewed by the **`clean-code-reviewer` subagent**. Invoke it after writing a meaningful chunk of TS (a component / module / feature) or before a commit — **not** on every edit (a per-edit LLM review is slow and can loop). It's read-only; apply its findings yourself. The rules it works to — and any other reviewer works to — are in **Reviewing code here** below. `mattpocock-skills:code-review` is run beside it — **kept after a two-cycle trial, 2026-11-17** — and reviews on two axes ours has no concept of: whether a *documented standard was rewritten* to permit the change, and whether the change matches what was actually asked for. Ours reads only the TypeScript in a diff, so the `.md` files changed alongside it are that one's to check.
 - **Reusable setup kit:** generalizable governance/config (the clean-TS hook, reviewer agents, lint/tsconfig) is captured in `~/Desktop/Practice/_setup-kit/`. When a new reusable piece is built here — e.g. the **Playwright + testing-agent** testing layer (course lessons 16–20) — `cp` it into the kit's `templates/` and note it in the kit's README.
 
 ## Reviewing code here
@@ -534,12 +534,26 @@ go into `_setup-kit/` until a second project has actually used it.
    - `mattpocock-skills:code-review` — two axes ours has no concept of: whether a
      **documented standard was rewritten** to permit the change, and whether the change
      **matches what was asked**. It takes a **fixed point** (the commit before the work)
-     and needs to be told where the spec lives — here that is Phase 4 of
-     `_resources/project/implementation-plan.md` plus this file's **Status** and **Known
-     gaps**. **Tell it to read the spec *at the fixed point*, not at `HEAD`**: this
-     repo's work routinely edits its own spec files, and reading them at `HEAD` lets a
-     change grade its own homework. Added 2026-11-13 after it found a stale Known-gaps
-     row all of ours had missed.
+     and two different spec sources:
+     - **What was asked** is the **plan file that was approved** (`~/.claude/plans/<name>.md`),
+       not Phase 4 of `_resources/project/implementation-plan.md`. Phase 4 is one bullet
+       — *"Add filtering and sorting"* — and a reviewer reading a one-line spec can only
+       confirm the feature exists; the plan lists every decision that was agreed before
+       any code existed, so the axis can say which are missing and which arrived
+       unasked. It sits outside git, which costs nothing here: no commit edits it, so
+       there is nothing to read at a fixed point.
+     - **The documented standards** are this file plus both workspace files, and this
+       file's **Status** and **Known gaps**. **Tell it to read those *at the fixed
+       point*, not at `HEAD`** — this repo's work routinely edits its own standards
+       files, and reading them at `HEAD` lets a change grade its own homework.
+
+     **It is run beside ours, not instead of it**, and two cycles (2026-11-13,
+     2026-11-17) produced no overlapping finding at all: `clean-code-reviewer` is scoped
+     to *"the TypeScript that was just written or changed"* and never opens the `.md`
+     files in the same diff. This one has twice found what that leaves — a stale
+     Known-gaps row, and a **Status** paragraph claiming `UsersTable` was built on
+     TanStack Table before that work had been done. Both are prose the code does not
+     back, and ours had no reason to look.
    - `security-reviewer` — only when the change touched auth or an endpoint.
 
    **One agent holds the tree at a time, and this is the step where that bites.**
