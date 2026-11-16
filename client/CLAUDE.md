@@ -11,6 +11,10 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - **React Router 8** — declarative mode (`BrowserRouter` + `<Routes>`)
 - **react-hook-form + zod** (via `@hookform/resolvers/zod`) for forms
 - **axios** + **TanStack Query** (`@tanstack/react-query`) for data fetching
+- **TanStack Table v9** (`@tanstack/react-table`) for the ticket list's columns and its
+  sortable header. **v9, not the v8 nearly every example online still shows:**
+  `tableFeatures()` + `useTable()` + `<table.FlexRender>`, not `useReactTable()` +
+  `flexRender()`. shadcn's own data-table docs are on v9 too
 - **better-auth** React client (`better-auth/react`)
 - **Vitest** + **React Testing Library** + `jest-dom` (component tests, jsdom)
 
