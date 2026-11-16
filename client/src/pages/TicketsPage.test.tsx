@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { AxiosResponse } from "axios";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,7 +40,7 @@ function respondWith(tickets: TicketRow[]) {
   vi.mocked(api.get).mockResolvedValue({ data: { tickets } } as AxiosResponse);
 }
 
-function renderTicketsPage() {
+function renderTicketsPage(initialUrl = "/tickets") {
   // A fresh client per test. The real app keeps one at module scope so the
   // cache outlives components — here that is exactly what must not happen, or
   // one test's rows would answer the next test's query. `retry: false` stops
@@ -51,7 +51,7 @@ function renderTicketsPage() {
 
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialUrl]}>
         <TicketsPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -90,6 +90,62 @@ describe("TicketsPage", () => {
       "/api/tickets",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+  });
+
+  // The sort travels as query parameters, and this is the only test that sees
+  // the request itself. `objectContaining` above tolerates an extra key, so it
+  // would stay green against a page that sent no `params` at all.
+  it("asks for the order the URL is already showing", async () => {
+    respondWith([TICKET]);
+
+    renderTicketsPage("/tickets?sortBy=subject&sortOrder=asc");
+
+    await screen.findByRole("cell", { name: TICKET.subject });
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      "/api/tickets",
+      expect.objectContaining({
+        params: { sortBy: "subject", sortOrder: "asc" },
+      }),
+    );
+  });
+
+  // A bare /tickets still sends the default explicitly rather than leaving the
+  // server to supply it. Both ends would agree either way; sending it keeps the
+  // request a complete description of what is on screen.
+  it("sends the default order when the URL asks for none", async () => {
+    respondWith([TICKET]);
+
+    renderTicketsPage();
+
+    await screen.findByRole("cell", { name: TICKET.subject });
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      "/api/tickets",
+      expect.objectContaining({
+        params: { sortBy: "createdAt", sortOrder: "desc" },
+      }),
+    );
+  });
+
+  // The whole loop in one test, which is the thing only this page can answer:
+  // a click on a header changes the URL, and the URL is what the next request
+  // is built from. The table proves the click produces the right sorting; the
+  // hook proves the URL is written; nothing but this proves they are connected.
+  it("refetches in the new order when a header is clicked", async () => {
+    respondWith([TICKET]);
+
+    renderTicketsPage();
+    await screen.findByRole("cell", { name: TICKET.subject });
+
+    fireEvent.click(screen.getByRole("button", { name: "Subject" }));
+
+    await vi.waitFor(() => {
+      expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+        "/api/tickets",
+        expect.objectContaining({
+          params: { sortBy: "subject", sortOrder: "asc" },
+        }),
+      );
+    });
   });
 
   // Unreachable from E2E without breaking the server on purpose.

@@ -1,6 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { TICKETS_QUERY_KEY } from "./query-key";
+import type { TicketListQuery } from "../../../../../core/schemas/tickets.ts";
+import { ticketKeys } from "./query-key";
 
 // Hand-written to mirror the Postgres enums in server/prisma/schema.prisma, the
 // same way UserRow spells out `role` as "agent" | "admin".
@@ -39,20 +40,34 @@ export type TicketRow = {
   createdAt: string;
 };
 
-async function getTickets(signal: AbortSignal): Promise<TicketRow[]> {
+async function getTickets(
+  signal: AbortSignal,
+  query: TicketListQuery,
+): Promise<TicketRow[]> {
   const { data } = await api.get<{ tickets: TicketRow[] }>("/api/tickets", {
     signal,
+    params: query,
   });
   return data.tickets;
 }
 
 /**
- * The ticket list, newest first. The order is the server's and is not re-sorted
- * here — two places deciding one order is how they come to disagree.
+ * The ticket list in the order the server put it in.
+ *
+ * `query` says which column and direction to *ask* for; it never says how to
+ * arrange what comes back. Nothing here re-sorts the rows — two places deciding
+ * one order is how they come to disagree, and once this list is paginated the
+ * client would only be able to sort the page it can see.
+ *
+ * `keepPreviousData` is what makes a sort click feel like a sort rather than a
+ * reload: the key changes, so without it React Query has no data for the new
+ * key and the table falls back to its skeleton for the length of a round trip.
+ * With it the rows that are on screen stay there until the new ones arrive.
  */
-export function useTickets() {
+export function useTickets(query: TicketListQuery) {
   return useQuery({
-    queryKey: TICKETS_QUERY_KEY,
-    queryFn: ({ signal }) => getTickets(signal),
+    queryKey: ticketKeys.list(query),
+    queryFn: ({ signal }) => getTickets(signal, query),
+    placeholderData: keepPreviousData,
   });
 }

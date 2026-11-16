@@ -1,5 +1,6 @@
 import { useTickets } from "@/features/tickets/api/get-tickets";
 import TicketsTable from "@/features/tickets/components/TicketsTable";
+import { useTicketSort } from "@/features/tickets/hooks/use-ticket-sort";
 import NavBar from "@/components/NavBar";
 import {
   Card,
@@ -13,11 +14,17 @@ import {
 // ticket from the UI, by design — POST /api/webhooks/inbound-email is a
 // ticket's only writer.
 //
-// Read-only for now on purpose. Sorting, filtering, search and pagination are
-// later units; when the filters arrive they belong in the URL, not in state
-// here (see client/CLAUDE.md on state management).
+// Read-only for now on purpose: nothing on this page changes a ticket. What it
+// can change is the question it asks — and the sort lives in the URL rather
+// than in state here, which is the arrangement client/CLAUDE.md pre-committed
+// to for filters. The page holds no sorting state of its own; useTicketSort
+// reads the URL and hands back both spellings of it.
+//
+// Filtering, search and pagination are still later units and belong in the same
+// place when they arrive.
 export default function TicketsPage() {
-  const { data: tickets, isPending, error } = useTickets();
+  const { sorting, onSortingChange, listQuery } = useTicketSort();
+  const { data: tickets, isPending, error } = useTickets(listQuery);
 
   return (
     <div className="min-h-screen bg-muted">
@@ -36,7 +43,12 @@ export default function TicketsPage() {
                 renders no table at all. */}
             {error && <p className="text-destructive mb-4">{error.message}</p>}
             {(isPending || tickets) && (
-              <TicketsTable tickets={tickets} isPending={isPending} />
+              <TicketsTable
+                tickets={tickets}
+                isPending={isPending}
+                sorting={sorting}
+                onSortingChange={onSortingChange}
+              />
             )}
           </CardContent>
         </Card>

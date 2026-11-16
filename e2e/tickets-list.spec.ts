@@ -55,7 +55,7 @@ test.describe("Ticket list", () => {
     // accessible name reads "Sender ui-list sender-ui-list-<uuid>@test.local".
     await expect(row.getByRole("cell", { name: email.from })).toBeVisible();
     // "Open", not "open". The column is a Postgres enum and the sentence a
-    // person reads is TicketsTableRow's job (statusLabel); rendering the raw
+    // person reads is columns.tsx's job (statusLabel); rendering the raw
     // value would fail here.
     await expect(
       row.getByRole("cell", { name: "Open", exact: true }),

@@ -275,11 +275,40 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     → **a store**. Note the last step: "shared in many places" argues for Context, not
     for a store. A store needs a second reason — re-renders that need selectors, update
     logic worth keeping in one place, reads from outside React, or devtools.
-  - **Ticket filters are the next one, and the answer there is probably not a store
-    either.** The list landed on 2026-11-11 with no filters at all, on purpose —
-    `GET /api/tickets` takes no query parameters, so there is nothing to hold yet. Status / category / assignee / search / page belong in the URL
-    (`useSearchParams`), because a filtered list should survive a refresh, work with the
-    back button, and be shareable as a link. A store does none of those.
+  - **The ticket list's sort is in the URL, and it is the first proof of that rule
+    rather than a plan.** `useTicketSort` (`features/tickets/hooks/`) reads `sortBy` and
+    `sortOrder` out of `useSearchParams`, and that is the page's only sorting state —
+    `TicketsPage` holds none of its own. A sort is where the person is looking, not a
+    detail of how the page is drawn: in the URL it survives a refresh, the back button
+    undoes it, and the view is shareable as a link. A store does none of those. Filters,
+    search and page belong in the same place when they arrive; none of them exists yet.
+    Two details of that hook are load-bearing and neither is obvious.
+    **Every parameter read out of the URL needs `?? undefined`.** zod's `.default()`
+    fires on `undefined` and never on `null`, while `searchParams.get()` answers `null`
+    for a parameter that is not there — so without it a URL carrying one half of the sort
+    fails the parse and reverts to newest-first. That half-a-sort URL is not an edge
+    case: it is what the app itself writes, because `toSearchParams` drops whichever half
+    already matches the default, so a click on Status produces exactly `?sortBy=status`.
+    Found by mutation testing on 2026-11-14 — removing the `??` broke nothing until
+    *"fills in the half of the sort the URL leaves out"* was written for it, and that test
+    still goes red without it.
+    **The cost is that filtering and pagination each need their own**, and forgetting one
+    reproduces the fault for that parameter alone.
+    `safeParse(Object.fromEntries(searchParams))` removes the condition rather than
+    guarding it, and was **tried on 2026-11-16 and reverted on 2026-11-17 by preference** —
+    reading each parameter by name is the clearer of the two. Worth recording so it is not
+    re-proposed as new, and because reverting it surfaced something bigger: it needs
+    `DOM.Iterable` in `lib`, which `tsc` here does not demand only because `@types/node`
+    leaks an iterable `URLSearchParams` into the client's program (own row in the root
+    `CLAUDE.md` Known gaps).
+    And **a sort equal to the server's default writes no parameters at all**, so
+    `/tickets` stays `/tickets` — which is also why the half-a-sort case exists.
+    **`sorting` and `onSortingChange` travel together everywhere** — out of the hook,
+    through `TicketsPage`, into `TicketsTable` — which `clean-code-reviewer` named as a
+    pair wanting to be one type (2026-11-16). Two props is not worth a type; **the
+    trigger is the third pair**, because filtering and pagination each arrive as the same
+    shape and six props threaded through a page that uses none of them is the point at
+    which passing the `table` instance, or `children`, costs less.
   - **Never park server data in a store.** That is a second cache beside the one
     TanStack Query already keeps, and then nothing says which of the two is right.
 - **Server errors from a mutation go through `setError`, not a second dialog.** A 409
@@ -395,8 +424,12 @@ components/ lib/ test/  →  nothing above them
   leaves it silently unguarded. Note that this cuts against the reasoning that retired
   `FormField` (match the documented shape) — the difference is that a missing lint zone
   cannot be noticed by reading the code, and a wrongly-spelled import can.
-- **`features/<domain>/api/` holds the server calls; `hooks/`, `types/`, `stores/` are
-  still not created until something goes in them.** `api/` was created on 2026-10-23, by
+- **`features/<domain>/api/` holds the server calls; `types/` and `stores/` are still
+  not created until something goes in them.** `features/tickets/hooks/` was created on
+  2026-11-13 by that same rule, once `useTicketSort` existed: it owns logic that can be
+  wrong on its own and a test aims straight at it, which is two of the five questions in
+  the root [`../CLAUDE.md`](../CLAUDE.md) answered yes. `features/users/` still has no
+  `hooks/`. `api/` was created on 2026-10-23, by
   decision, once `PATCH` made it three endpoints — `get-users.ts`, `create-user.ts`,
   `update-user.ts` plus the shared `query-key.ts`. The shape is bulletproof-react's:
   one file per endpoint, named for it.

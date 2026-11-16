@@ -63,7 +63,10 @@ unfinished half named on the line itself
 - [ ] Implement get ticket API endpoint
 - [ ] Implement update ticket API endpoint (change status, assign agent)
 - [x] Create ticket list page — a table at `/tickets`, newest first, no controls
-- [ ] Add the filtering and sorting UI
+- [~] Add the filtering and sorting UI — **sorting done**: every column header on
+      `/tickets` sorts, built on TanStack Table v9 with `manualSorting`, and the sort
+      lives in the URL (`?sortBy=&sortOrder=`) rather than in component state, so a
+      refresh keeps it and the back button undoes it. **Filtering UI is not done**
 - [ ] Create ticket detail page
 
 > **[ours]** This note used to say the create-ticket step would use a manual form as a
