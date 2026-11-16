@@ -171,8 +171,10 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   "the delete failed" to land on, and two Radix portals open at once fight over one
   focus trap.
 - **A soft-deleted row is shown, not hidden.** `GET /api/users` returns it on purpose,
-  so `UsersTableRow` renders it muted with a `Deleted` badge **inside the name cell**
-  and no action buttons. The badge gets no column of its own: a column means a header
+  so the roster renders it muted with a `Deleted` badge **inside the name cell** and no
+  action buttons. The badge and the missing buttons live in the name and actions column
+  definitions in `features/users/components/columns.tsx`; the muting is a class on the
+  `<TableRow>`, so it stays in `UsersTable` where the row is written. The badge gets no column of its own: a column means a header
   cell, a sixth skeleton cell and a `colSpan` bump, all to say something only some rows
   need to say. Note the cost it does have — the badge makes
   that cell's accessible name read `"Some Name Deleted"`, so specs locate a row by its
@@ -187,9 +189,10 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     nothing else turns all three red.
 - **The table is its own component, and the reason is that agreement.**
   `UsersTable` holds the headers, the empty row's `colSpan` and the skeleton cells —
-  everything that has to agree on how many columns there are — while `UsersTableRow`
-  holds the data cells. Those first three lived in `UsersPage` until 2026-11-02, so a
-  new column meant editing two files with nothing saying when one was forgotten. It
+  everything that has to agree on how many columns there are. Those three lived in
+  `UsersPage` until 2026-11-02, so a new column meant editing two files with nothing
+  saying when one was forgotten; since 2026-11-16 all three read
+  `table.getAllColumns()`, so they cannot disagree at all. It
   takes `users` and `isPending` as **props** rather than calling `useUsers()` itself:
   the page shows `error` above the Card, so it has to call the hook anyway, and the
   props are what let the three bodies be reached from a test with no faked request.
@@ -200,17 +203,35 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     waiting for a sweep to notice the collection half, which is the standing correction
     to the 2026-10-26 miss. `TicketsTable` + `TicketsTableRow`, same props shape, same
     reasons.
-  - **The two tables are deliberately not abstracted into a shared `DataTable`.** That
-    would be an abstraction, so reuse is its test — and a second caller now exists, which
-    is why this needs saying rather than being obvious. The question that decides it is
-    the other one: *must the copies change together?* They must not. A column added to
-    the roster says nothing about the ticket list, and sorting, filtering and pagination
-    are coming to the ticket list and not to the roster. A hand-rolled `DataTable` would
-    have to take a column-definition array — which is what TanStack Table is — and would
-    be guessed right before the thing that reshapes it arrives. **Trigger: a third
-    table, or the sorting step, whichever comes first.** `splitRows()` in the two table
-    tests is the same copy twice and stays that way on the same reasoning; its home if a
-    third appears is `src/test/`, beside `axios-error.ts`.
+    **`TicketsTableRow` was then retired on 2026-11-13**, and not because the decision
+    above was wrong — because TanStack Table keeps each cell's renderer in the column
+    definition, so a row component and a `columns` array are two answers to one question.
+    The row's three cases (a status as a word, a category as a word, an em dash for an
+    unclassified ticket) moved into `TicketsTable.test.tsx` rather than being dropped;
+    what was lost is reaching them with one prop instead of a one-element `tickets`
+    array, which is a small price for the agreement below.
+  - **Both tables use TanStack Table; neither uses a shared `DataTable` component.**
+    The trigger the previous version of this bullet named — *"a third table, or the
+    sorting step, whichever comes first"* — fired on 2026-11-13, and its two halves got
+    different answers.
+    **The library: adopted for both**, so the project has one way of building a table
+    rather than two. The ticket list went first because it is what needed sorting;
+    `UsersTable` followed on 2026-11-16 in a commit of its own, as a refactor with no
+    behaviour change and **no sorting** — `userTableFeatures` registers no features
+    beyond its column meta, so the sorting code is not even shipped on `/users`. The
+    proof it was a refactor is that **not one assertion in `UsersTable.test.tsx` had to
+    change**. `UsersTableRow` was deleted in the same move, for the same reason
+    `TicketsTableRow` was, and its three cases moved into `UsersTable.test.tsx`.
+    **A shared component: still refused**, on the test that always decided it: *must the
+    copies change together?* They must not. A column added to the roster says nothing
+    about the ticket list, and sorting arrived at one and not the other. The old
+    reasoning that *"a hand-rolled `DataTable` would have to take a column-definition
+    array — which is what TanStack Table is"* reads the other way round now: that is an
+    argument for **using** TanStack, and once each table has its own `columns.tsx` what a
+    wrapper would still share is a `<Table>`, a header loop and a body switch — markup
+    that is cheaper read twice than learned once.
+    `splitRows()` in the two table tests is the same copy twice and stays that way on the
+    same reasoning; its home if a third appears is `src/test/`, beside `axios-error.ts`.
 - **`api` carries a 401 interceptor, and it is the only thing watching our own API.**
   Better Auth's session store already refetches on window focus and nulls itself on a
   401, so `ProtectedRoute` sends someone to `/login` on the next reload or tab switch —
@@ -368,9 +389,14 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - `src/pages/` — route pages (`LoginPage`, `HomePage`, `UsersPage`, `TicketsPage`)
 - `src/features/<domain>/` — everything that only one domain uses, e.g.
   `features/users/components/` (`CreateUserDialog`, `CreateUserForm`,
-  `EditUserDialog`, `EditUserForm`, `DeleteUserDialog`, `UsersTable`, `UsersTableRow`)
-  and `features/tickets/components/` (`TicketsTable`, `TicketsTableRow` — read-only, no
-  dialogs, because a ticket's only writer is the inbound-email webhook)
+  `EditUserDialog`, `EditUserForm`, `DeleteUserDialog`, `UsersTable` plus its own
+  `columns.tsx`) and `features/tickets/components/` (`TicketsTable` plus its
+  `columns.tsx`). **Each `columns.tsx` holds that table's TanStack column definitions,
+  the `features` it switches on, and whatever label maps its cells read** — the status
+  and category maps for tickets, the `Deleted` badge and the edit/delete dialogs for
+  users. The two are deliberately not shared: a column added to the roster says nothing
+  about the ticket list. Tickets has no dialogs at all, because a ticket's only writer is
+  the inbound-email webhook.
 - `src/components/` — components **two or more** features or pages use
   (`NavBar`, `ProtectedRoute`, `ErrorDialog`, `PasswordInput`);
   `src/components/ui/` — shadcn (generated)

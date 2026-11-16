@@ -13,6 +13,11 @@ vi.mock("@/lib/api", () => ({
 // These three states used to be asserted through UsersPage, with a faked roster
 // request standing in for each one. The table is what actually decides them, so
 // they belong here: two props in, three bodies out.
+//
+// Since UsersTableRow retired (2026-11-16) this file also owns what one row
+// says — the second describe below. Those three cases came from
+// UsersTableRow.test.tsx unchanged in substance; what was lost is reaching them
+// with one prop instead of a one-element `users` array.
 const AGENT: UserRow = {
   id: "u1",
   name: "Working Agent",
@@ -105,5 +110,65 @@ describe("UsersTable", () => {
       "colspan",
       String(columnCount),
     );
+  });
+});
+
+describe("UsersTable — what one row says", () => {
+  // Rendering a one-element roster rather than a row component, because
+  // TanStack keeps each cell's renderer in the column definition and there is
+  // no row component left to aim at. `within(row)` keeps each assertion to the
+  // row it is about, exactly as the row-level test did.
+  function renderOneUser(user: UserRow) {
+    renderTable({ users: [user], isPending: false });
+
+    const { bodyRows } = splitRows();
+    const [row] = bodyRows;
+    if (!row) {
+      throw new Error("the table rendered no body row");
+    }
+    return row;
+  }
+
+  it("shows a live user with both actions", () => {
+    const row = renderOneUser(AGENT);
+
+    expect(within(row).getByRole("cell", { name: AGENT.email })).toBeVisible();
+    expect(within(row).getByRole("cell", { name: AGENT.role })).toBeVisible();
+    expect(
+      within(row).getByRole("button", { name: `Edit ${AGENT.name}` }),
+    ).toBeVisible();
+    expect(
+      within(row).getByRole("button", { name: `Delete ${AGENT.name}` }),
+    ).toBeVisible();
+    expect(within(row).queryByText("Deleted")).not.toBeInTheDocument();
+  });
+
+  // The roster returns deleted rows on purpose, so this is the only place that
+  // says what one looks like. The muting itself is not asserted: it is a class,
+  // and an assertion on a class passes while the page is broken. The badge is
+  // the part a person — or a screen reader — actually reads.
+  it("badges a deleted user and offers nothing to do with them", () => {
+    const row = renderOneUser({
+      ...AGENT,
+      name: "Gone Agent",
+      deletedAt: "2026-03-01T00:00:00.000Z",
+    });
+
+    expect(within(row).getByText("Deleted")).toBeVisible();
+    expect(within(row).queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  // The UI half of a rule the server also enforces, with 403
+  // admin_not_deletable. Editing an admin is still offered — only deleting is
+  // refused — so this asserts both halves rather than just the absence.
+  it("lets an admin be edited but not deleted", () => {
+    const row = renderOneUser({ ...ADMIN, name: "The Admin" });
+
+    expect(
+      within(row).getByRole("button", { name: "Edit The Admin" }),
+    ).toBeVisible();
+    expect(
+      within(row).queryByRole("button", { name: "Delete The Admin" }),
+    ).not.toBeInTheDocument();
   });
 });

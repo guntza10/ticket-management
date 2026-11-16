@@ -403,6 +403,41 @@ mistake would be caught is worth checking against the test that supposedly catch
   was decided here; the interest is that the list above was applied without a sweep at
   all.
 
+- **`TicketsTableRow` — retired** (2026-11-13), two days after being extracted, and it is
+  the first case here where **adopting a library dissolved a component rather than a rule
+  changing its mind**. TanStack Table keeps each cell's renderer inside the column
+  definition, so a `columns.tsx` and a row component are two answers to the same
+  question; keeping both would mean the row either ignored the column array or re-read
+  it. The five questions still score the row the way they did — it mirrors one record,
+  a test aimed at it — which is why this is worth writing down: **the list judges whether
+  a unit should exist, not whether something else has taken over its job.** What was paid
+  is that the row's three cases now reach the DOM through a one-element `tickets` array
+  instead of one prop; what was bought is that the headers, the skeleton's cells and the
+  empty row's `colSpan` all read `getAllColumns()`, so the agreement the extraction
+  existed to protect cannot drift at all.
+
+- **`UsersTableRow` — retired** (2026-11-16), for the same reason `TicketsTableRow` was
+  and with one difference worth recording: **nothing about the roster changed to justify
+  it.** The ticket row was dissolved because its table had to grow a sortable header; the
+  user row was dissolved because the project had decided to build a table one way, and
+  the roster was the one still built the other way. So this is the first unit here retired
+  for **consistency** rather than for anything about the unit itself — which is a weaker
+  reason, and worth being honest that it is weaker. What made it affordable is that the
+  move was provably behaviour-preserving: `UsersTable.test.tsx` kept all three
+  assertions, and the row's own three cases moved into it and were each re-proven able to
+  fail. The cost paid twice over now: both tables reach a row's conditions through a
+  one-element array instead of one prop.
+
+- **`SortableHeader` — refused for now** (2026-11-16), raised by `clean-code-reviewer`
+  and it genuinely scores: a header cell mirrors one column, owns the state it reads
+  (`getIsSorted()` feeding both `aria-sort` and the arrow), and two test groups aim at it.
+  What declined it is the price in v9 — the prop would have to be typed
+  `Header<typeof ticketTableFeatures, TicketRow, unknown>`, which is harder to read than
+  the eight lines it would remove, and `TicketsTable` is 170 lines of which most is the
+  three bodies. **Trigger: a second sortable table** (the roster is deliberately not one),
+  or the header growing anything beyond an arrow — a filter control in the header is the
+  likely one.
+
 - **A shared `DataTable` — refused** (2026-11-11), and it is the first case where
   question 4 said *yes* and the answer was still no. `UsersTable` and `TicketsTable` have
   the same four parts — headers, skeleton, empty row, `.map` — so the second caller an
@@ -414,6 +449,21 @@ mistake would be caught is worth checking against the test that supposedly catch
   and not at the roster — so the guessed API would be reshaped immediately. **Trigger: a
   third table, or the sorting step.** The honest cost is JSX that looks alike in two
   places, and `splitRows()` duplicated across the two table tests.
+
+  **That trigger fired on 2026-11-13, and the two halves of the question got different
+  answers.** The *library* was adopted for both tables, so the project builds a table one
+  way rather than two — tickets on 2026-11-13 because it is what needed sorting, then
+  `UsersTable` on 2026-11-16 as a separate refactor with no behaviour change and no
+  sorting, proven by its three tests staying green with no assertion touched. A shared
+  `DataTable` *component* is still refused, on the rule that always decided it: the
+  copies must not change together. Worth keeping is how one of the 2026-11-11 reasons
+  reversed:
+  *"a hand-rolled `DataTable` has to take a column-definition array, which is what
+  TanStack Table already is"* was an argument against building one, and it is now the
+  argument for **using** the real thing. Once each table owns a `columns.tsx`, what a
+  wrapper would still share is a `<Table>`, a header loop and a three-way body switch —
+  markup that is cheaper read twice than learned once. The cost is unchanged and still
+  honest: that markup, and `splitRows()`.
 
 ### Folder structure: adopt the rule, not the empty folders
 
@@ -570,7 +620,7 @@ put is the first thing step 3's ordering hands you.
   replaces it, a deleted user's live cookie stops resolving, and they cannot sign back
   in — with an answer byte-identical to a wrong password. Every run migrates, truncates
   and re-seeds itself.
-- ✅ **Component tests** — Vitest + Testing Library, **61 specs**. `UsersPage` covers what
+- ✅ **Component tests** — Vitest + Testing Library, **85 specs**. `UsersPage` covers what
   only the page can answer — that the roster it fetched reaches the table, and that a
   failed first load shows the message with no table at all — while `UsersTable` owns the
   three bodies (skeleton, empty, rows) and, in all three, that every one of them spans
@@ -596,18 +646,39 @@ put is the first thing step 3's ordering hands you.
   roster, fail on request, or reject a sign-out on demand, the loading states are
   gone before an assertion can land on them, and a request can only be held unanswered
   where the client is the one answering it.
-  The tickets feature adds twelve: `TicketsTable` owns the three bodies and, in all
+  The tickets feature adds thirty-four. `TicketsTable` owns the three bodies and, in all
   three, that each spans the **rendered** header count — the column total is pinned once,
   deliberately, so adding a column makes somebody come and agree to it — plus that rows
   render in the order they were given, since the server decides that order and the client
-  must not re-decide it; `TicketsTableRow` owns the three conditions one row answers
-  (each status shown as a word rather than its enum spelling, a category likewise, and an
-  em dash where nothing has classified the ticket yet) while deliberately asserting
-  nothing about which `Badge` variant a status gets, because that is a class; and
-  `TicketsPage` owns what only a page can — that the list it fetched reaches the table,
-  that it asks the endpoint the list actually lives at, and that a failed first load
-  shows the message with no table at all. Its session is faked as an **agent**, not an
-  admin, which is a quiet assertion that neither the page nor the endpoint needs one.
+  must not re-decide it. Since `TicketsTableRow` retired it also owns what each cell says
+  (each status as a word rather than its enum spelling, a category likewise, an em dash
+  where nothing has classified the ticket) while still asserting nothing about which
+  `Badge` variant a status gets, because that is a class. And it owns the header: one
+  case per column proving a click asks for **that column's id**, which is the agreement
+  `columns.tsx` cannot state in types; that a text column opens ascending and the date
+  column descending; that a second click flips; that a third never empties the sort; and
+  that a sorted header carries `aria-sort="ascending"` while the rest carry
+  `"none"` — the test asserts the whole array, which is what makes the `"none"`s
+  part of the claim rather than an unstated default.
+  `useTicketSort` has nine of its own, aimed at the two URLs a browser will not produce
+  on demand: one somebody typed by hand, and one the app itself writes where **half the
+  sort is missing** because it matched the default. That second case is the one that
+  caught a real fault — without it, removing the hook's `?? undefined` broke nothing,
+  while in a browser a click on Status would have silently undone itself.
+  Two more sit beside the query keys themselves, one per feature, and they exist because
+  of a risk the 2026-11-14 move to a query factory **created**: splitting one
+  `["users"]` array into `all()` and `list()` buys invalidating a whole feature at once
+  and costs a prefix relationship nothing checked — measured, making `list()` stop
+  spreading `all()` left all 83 specs green while a created user would have left the
+  table showing the roster from before. Each asserts it through a real `QueryClient`,
+  because the rule under test is React Query's key matching rather than ours.
+  `TicketsPage` owns what only a page can: that the list it fetched reaches the table,
+  that it asks the endpoint the list actually lives at, that the order on screen is the
+  order it asks the server for, and that a click on a header refetches in the new order —
+  the one assertion that proves the table, the hook and the request are connected rather
+  than merely each correct. A failed first load still shows the message with no table at
+  all. Its session is faked as an **agent**, not an admin, which is a quiet assertion
+  that neither the page nor the endpoint needs one.
 - ✅ **Tickets — inbound webhook** — the `Ticket` model (`open`/`resolved`/`closed`,
   a nullable `TicketCategory`, `senderName`/`senderEmail`, `bodyHtml`, a nullable
   `assignedTo` relation) and **`POST /api/webhooks/inbound-email`**, the one route in the
@@ -633,15 +704,45 @@ put is the first thing step 3's ordering hands you.
   for. The endpoint has **its own allow-list, narrower than the webhook's** — seven
   fields, with `body` and `bodyHtml` deliberately left out, because a list renders
   neither and `bodyHtml` is stored unsanitised. Newest first, decided by the server, and
-  **no query parameters at all**. The client mirrors `features/users/`: `TicketsTable`
-  (headers, `colSpan`, skeleton) and `TicketsTableRow` (one ticket) both extracted on day
-  one, with status and category rendered through `Record`-typed label maps so a value
-  nobody wrote a label for fails `tsc`. `prisma/seed-tickets.ts` (`db:reseed:tickets`)
-  gives the dev database rows to look at and refuses any database named `*_test`.
-  Deliberately absent: sorting, filtering, search, pagination, the detail page,
-  assignment, and any way to change a ticket.
-- ⏭️ **Next** — sorting and filtering on the list (endpoint and UI), then pagination,
-  the detail page, assignment.
+  **no query parameters at all** — see the next entry, which changed that.
+  `prisma/seed-tickets.ts` (`db:reseed:tickets`) gives the dev database rows to look at
+  and refuses any database named `*_test`.
+- ✅ **Ticket sorting, decided by Postgres** — every column header on `/tickets` sorts,
+  and `GET /api/tickets` grew the app's **first query parameters**: `?sortBy=` over five
+  columns and `?sortOrder=`, both validated against `ticketListQuerySchema` in
+  `core/schemas/tickets.ts` — the second file to earn a place in `core/`, because the
+  server parses `req.query` with it and the client parses the URL with it. A value
+  outside the allow-list is `400 invalid_query`, not a silent default. `orderBy` is a
+  `Record<TicketSortField, …>` rather than a computed key, so a column added to the
+  schema and forgotten in the route fails `tsc` **naming the member** (measured, both
+  ways). `id desc` is now a second sort key on every answer, because `status` and
+  `category` hold three values each and Postgres promises nothing inside those groups —
+  a deliberate contract change, and the spec comment that warned against it was rewritten
+  in the same commit. `category` sorts `nulls: "last"` both ways so unclassified tickets
+  never open the list.
+  **The client sorts nothing.** `TicketsTable` is built on **TanStack Table v9** with
+  `manualSorting` and no sorted row model at all; the library decides which header is
+  marked and which way a click flips, Postgres decides the rows. The sort lives in the
+  **URL** (`useTicketSort` in `features/tickets/hooks/`), not in component state, so a
+  refresh keeps it, the back button undoes it and the view is a shareable link — and a
+  sort equal to the default writes no parameters, so `/tickets` stays `/tickets`.
+  `TicketsTableRow` is gone: cells live in `columns.tsx`, which also makes the header
+  count, the skeleton's cells and the empty row's `colSpan` one value instead of three.
+  Deliberately absent: filtering, search, pagination, the detail page, assignment, any
+  way to change a ticket, and any index on a sort column (the trigger is pagination —
+  recorded on the model).
+- ✅ **Both tables are built one way** — `UsersTable` followed onto TanStack Table on
+  2026-11-16, as a refactor with **no behaviour change and no sorting**: the roster still
+  takes no query parameters and `userTableFeatures` registers no features beyond its
+  column meta, so none of the sorting code ships on `/users`. `UsersTableRow` went the
+  way `TicketsTableRow` did and its three cases moved into `UsersTable.test.tsx`, each
+  re-proven able to fail. **The proof it was a refactor is that the table's own three
+  assertions were not touched.** A shared `DataTable` component is still refused — see
+  **When to extract a unit**. Both features also moved to a **query-key factory**
+  (`ticketKeys` / `userKeys`) with a `"list"` segment and a test holding the prefix
+  relationship that split created.
+- ⏭️ **Next** — filtering on the list (endpoint and UI), then pagination, the detail
+  page, assignment.
 
 ## Known gaps — deliberately deferred
 
@@ -662,7 +763,7 @@ is what will make it start hurting; revisit when you hit it.
 | **`forget-password` would mail a deleted user a working reset link.** The route reads the user by address and nothing there consults `deletedAt`. Harmless today: `emailAndPassword.sendResetPassword` is not configured, so the route cannot do anything. | The day password reset is turned on. | Add the same `deletedAt` check to that path, or move the check into a place every Better Auth route crosses. |
 | **`security.spec.ts`'s "accepts the very same sign-in from the trusted origin" has flaked once.** Seen in one full run of three on 2026-11-05; 40/40 green across four repeats of that file alone, so it is load-dependent rather than a logic fault — most likely several workers' sign-ins hashing at once, since Argon2 is deliberately slow. | A second sighting, or any other sign-in spec joining it. | Capture the failure message before theorising — this row records a symptom, not a diagnosis. Raising that spec's timeout would hide it rather than answer it. |
 | **The security review is one agent's judgement, with no checklist behind it.** Coverage is whatever it thinks to look for — it has no OWASP-style list, no CVE feed and no web access, so a class nobody named can simply be missed (IDOR is the nearest one: nothing in the repo names it, and `GET /api/tickets/:id` is where it lands). | **Decided against on 2026-11-13, and the triggers are what would overturn it:** a real deployment · **Phase 5's AI features**, where prompt injection is a class nothing here covers · or wanting to learn security properly, which deserves its own study rather than a checklist absorbed by an agent. | Until then, nothing. The case for leaving it: the threat model is empty (never deployed, no real users, no real data) and this agent already found a genuine pattern-injection hole unaided — `Re: %` as a read primitive, `eb45a04`. If it is revisited, the two worth reading are `getsentry/skills@security-review` (false-positive discipline: a confidence gate and a "Do Not Flag" list) and `owasp/secure-agent-playbook@web-security-review` (the A01–A10 coverage checklist). **Copy the method into `security-reviewer.md`, do not install** — the agent's `tools:` has no `Skill`, and the checklist needs pruning to the surfaces this app actually has. |
-| **The suite is top-heavy** — 124 specs at the E2E layer (70 of them API-level), 61 component specs, and nothing that runs server code without going through HTTP. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | **Half fired** with the ticket list, and the response was the right one: of the 22 new specs, 12 are component tests and 6 more are API-level; only 4 need a browser at all. What has *not* arrived yet is server logic worth isolating. |  Push new coverage downward — component tests for new UI states, API specs for new endpoints, and, once there is server logic worth isolating (status transitions are the first), a test runner in `server/` so it can be reached without HTTP. **Say "runs without HTTP", not "unit test":** that row used to read "no unit tests" while 49 component specs existed, which reads as having none at all. The axis that matters is what a test has to boot, not what it is called. |
+| **The suite is top-heavy** — 134 specs at the E2E layer (80 of them API-level), 85 component specs, and nothing that runs server code without going through HTTP. Defensible so far: the app has been mostly auth plumbing, and cookies, CORS and CSRF can only be proven with the real stack running. | **Half fired** with the ticket list, and the response was the right one: of the 22 new specs, 12 are component tests and 6 more are API-level; only 4 need a browser at all. Sorting pushed further the same way — **24** new component specs against 10 API-level ones and **nothing new in a browser**. What has *not* arrived yet is server logic worth isolating; `ORDER_BY` in `tickets.routes.ts` is the first thing that is almost a pure function. |  Push new coverage downward — component tests for new UI states, API specs for new endpoints, and, once there is server logic worth isolating (status transitions are the first), a test runner in `server/` so it can be reached without HTTP. **Say "runs without HTTP", not "unit test":** that row used to read "no unit tests" while 49 component specs existed, which reads as having none at all. The axis that matters is what a test has to boot, not what it is called. |
 | **A follow-up email that the duplicate guard matches is thrown away.** `POST /api/webhooks/inbound-email` answers `200` with the existing ticket and writes nothing — there is no `Reply` model yet, so the customer's second message is stored nowhere. | Already real, and the reason the guard was narrowed to subjects starting `Re:`/`Fwd:` rather than matching any subject the way the reference project does: that narrowing bounds the loss, it does not stop it. | Add the `Reply` model and append the follow-up to the ticket, which is what the reference project's own `Add the ability to receive emails` step does. |
 | **Threading is a subject heuristic, not RFC 5322.** The guard matches on `senderEmail` + the subject with `Re:`/`Fwd:` stripped, so a localised prefix (`AW:`, `Antwort:`, `回复:`, `RE[2]:`), a `Fw:`, or a customer editing the subject all miss. | A mail provider being connected — at which point `Message-ID` / `In-Reply-To` / `References` actually start arriving (SendGrid Inbound Parse posts them in its `headers` field). | Store `messageId` (unique, which also makes a retried delivery idempotent) and match on `In-Reply-To`/`References` first, keeping the subject heuristic as a fallback. Not built now because nothing sends a message id to this endpoint yet. |
 | **A malformed inbound email answers `400`.** Correct for a caller that can fix the body; wrong for a mail provider, which will retry a permanently-invalid email and then drop it silently. | A real provider posting to this route. | Decide the webhook's semantics then: answer `2xx` for anything permanently unprocessable and record it, reserving non-2xx for "retry me". |
