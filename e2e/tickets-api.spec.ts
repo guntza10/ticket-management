@@ -1,50 +1,17 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { ADMIN, AGENT, API_URL, signInViaApi } from "./support/auth";
+import { ADMIN, AGENT, signInViaApi } from "./support/auth";
 import {
   newInboundEmail,
   sendEmailExpectingNewTicket,
 } from "./support/inbound-email";
-
-const TICKETS_URL = `${API_URL}/api/tickets`;
-
-/**
- * Exactly the fields `GET /api/tickets` selects, hand-written and sorted — not
- * `Object.keys(TICKET_LIST_FIELDS)`, because a spec that read the value under
- * test could never notice the server reading the wrong one. That constant is
- * not exported for the same reason.
- *
- * What is *absent* here is the point. `body` and `bodyHtml` are in the
- * webhook's answer (`ALLOWED_TICKET_FIELDS` in support/inbound-email.ts) and
- * deliberately not in this one: a list renders neither, and `bodyHtml` is
- * stored unsanitised. This array is the only thing stopping someone
- * "simplifying" the route into reusing the webhook's wider constant.
- * `assignedToId` and `updatedAt` are out too.
- */
-const ALLOWED_TICKET_LIST_FIELDS = [
-  "category",
-  "createdAt",
-  "id",
-  "senderEmail",
-  "senderName",
-  "status",
-  "subject",
-];
-
-async function readTicketList(
-  request: APIRequestContext,
-  params?: Record<string, string>,
-) {
-  const response = await request.get(TICKETS_URL, params && { params });
-
-  // Asserted here so a failure lands on the line that broke rather than later
-  // on a confusing `undefined`.
-  expect(response.status()).toBe(200);
-  const { tickets } = (await response.json()) as {
-    tickets: Record<string, unknown>[];
-  };
-
-  return tickets;
-}
+// Moved to support/ on 2026-11-19, when tickets-api-filter.spec.ts became a
+// second caller. The allow-list is still hand-written there rather than read
+// off the server's own constant.
+import {
+  ALLOWED_TICKET_LIST_FIELDS,
+  readTicketList,
+  TICKETS_URL,
+} from "./support/tickets";
 
 test.describe("Tickets API — who may read the list", () => {
   test("GET /api/tickets is 401 without a session", async ({ request }) => {

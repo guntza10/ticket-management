@@ -59,6 +59,13 @@ router.use(requireAuth);
 // Not exported: e2e/tickets-api.spec.ts hand-writes the field list it asserts,
 // because a spec that read the value under test could never notice the server
 // reading the wrong one.
+//
+// Two other lists have to stay a subset of this one, and nothing enforces
+// either: TICKET_SORT_FIELDS in core/schemas/tickets.ts, and the columns
+// searchFilter below matches on. Order rows by, or search in, a column this
+// select refuses to return and the column leaks anyway — which rows come back
+// tells the caller what the hidden value holds. **Narrowing this list is the
+// move that breaks that**, so check both before removing a field.
 const TICKET_LIST_FIELDS = {
   id: true,
   subject: true,
@@ -94,15 +101,69 @@ const ORDER_BY: Record<
   createdAt: (direction) => ({ createdAt: direction }),
 };
 
+// Postgres LIKE and ILIKE read `%` and `_` as wildcards, and **Prisma does not
+// escape them for you.** Its own docs say so about the new query API — "you
+// write the `%` wildcards yourself" — and `contains` on this client behaves the
+// same way about the *value*: it wraps the string in `%…%` and passes whatever
+// is inside through untouched.
+//
+// So this runs over every search term before it reaches `contains`. Two things
+// it buys, and only the first is why it is here:
+//
+//   1. A search for `50%` means `50%`. Unescaped, the `%` matches any run of
+//      characters, so it also returns "50 cents" and "5000 units" — a wrong
+//      answer with nothing to show the person why.
+//   2. It is what makes `mode: "insensitive"` safe to use at all here. The
+//      repo's rule (server/CLAUDE.md → Tickets (inbound email)) was written
+//      after `Re: %` turned the webhook's duplicate guard into a way to read
+//      any open ticket; escaping is the half of the answer that applies when
+//      the pattern is genuinely a search box rather than an identity check.
+//
+// The backslash has to be in the class and replaced too, or `\%` typed by hand
+// would escape the escape. One pass over the three characters does that: `$&`
+// is the matched character, so `\` → `\\`, `%` → `\%`, `_` → `\_`.
+function escapeLike(value: string) {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
+// Which columns a search term is matched against: the subject, and both halves
+// of who wrote in. Every one of them is in TICKET_LIST_FIELDS above, and that
+// is a rule rather than a coincidence — filtering on a column the answer
+// refuses to return leaks it, because the set of rows that match tells you what
+// the hidden value contains. Check that list before adding a field here.
+//
+// `mode: "insensitive"` on all three, which is only defensible because of
+// escapeLike above: searching for "ANA" has to find "Ana Ruiz", and senderName
+// is the one column of the three with no lower-cased copy stored beside it.
+function searchFilter(needle: string): Prisma.TicketWhereInput[] {
+  const contains = { contains: escapeLike(needle), mode: "insensitive" } as const;
+  return [
+    { subject: contains },
+    { senderName: contains },
+    { senderEmail: contains },
+  ];
+}
+
 // The caller picks a column and a direction; the server still decides the order
 // of rows. Two places deciding one order is how they come to disagree, and the
 // server is the one that can still be right once this list is paginated — a
 // client sorting what it was sent can only ever sort the page it can see.
 //
-// An unknown column or direction is a 400 rather than a silent fall back to the
-// default, matching what a body does: zod refuses a value outside an enum, and
-// `POST /api/users` answers `invalid_body`. Defaulting quietly would let a
-// client ship a typo for months and read it as working.
+// Filtering follows the same split: the caller says which rows it wants, the
+// server decides what that means in SQL. All three filters are optional and
+// combine with AND, because each one narrows a different question — a status, a
+// category, and some text. `undefined` is how Prisma itself spells "no filter",
+// so an absent parameter needs no condition around it; `OR` is the exception,
+// since an empty array would match nothing instead of everything.
+//
+// An unknown column, direction, status or category is a 400 rather than a
+// silent fall back to the default, matching what a body does: zod refuses a
+// value outside an enum, and `POST /api/users` answers `invalid_body`.
+// Defaulting quietly would let a client ship a typo for months and read it as
+// working. `?search=` is the one exception and it is not an exception to that
+// rule: an empty search is "not filtering", which is a thing the caller can
+// legitimately mean, so the schema turns it into `undefined` rather than
+// refusing it.
 //
 // `id` is a second sort key on *every* answer, not a tiebreaker added where one
 // looked necessary. `status` and `category` hold three values each, so sorting
@@ -125,9 +186,17 @@ router.get("/", async (req, res) => {
     res.status(400).json({ error: "invalid_query" });
     return;
   }
-  const { sortBy, sortOrder } = parsed.data;
+  const { sortBy, sortOrder, search, status, category } = parsed.data;
 
   const tickets = await prisma.ticket.findMany({
+    where: {
+      // Written as plain properties rather than conditional spreads: Prisma
+      // reads `undefined` as "this filter was not asked for", which is exactly
+      // what an absent query parameter means.
+      status,
+      category,
+      OR: search ? searchFilter(search) : undefined,
+    },
     select: TICKET_LIST_FIELDS,
     orderBy: [ORDER_BY[sortBy](sortOrder), { id: "desc" }],
   });
