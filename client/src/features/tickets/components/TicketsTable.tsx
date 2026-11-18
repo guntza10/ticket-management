@@ -150,10 +150,18 @@ export default function TicketsTable({
             </TableRow>
           ))}
         {/* colSpan is the column count rather than a literal, and is still
-            asserted against the rendered headers rather than trusted. This body
-            is the one state E2E cannot stage: five workers share one test
-            database that is truncated once per run, and the other ticket specs
-            insert rows. */}
+            asserted against the rendered headers rather than trusted.
+
+            **This used to say the body was the one state E2E cannot stage** —
+            five workers share one test database that is truncated once per run,
+            and the other ticket specs insert rows, so an empty answer was not
+            something a spec could ask for. Filtering made it askable on
+            2026-11-19: a search for a token nobody holds, or a status no ticket
+            has, is an empty answer on a full table. `e2e/tickets-filter.spec.ts`
+            now asserts "No tickets found." when a status stops matching, and
+            deleting this block turns that test red — measured, so the sentence
+            above had to go rather than be left reading as a reason not to
+            try. */}
         {tickets?.length === 0 && (
           <TableRow>
             <TableCell

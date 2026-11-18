@@ -83,7 +83,7 @@ function splitRows() {
  * TanStack hands `onSortingChange` a function rather than a value, the same
  * contract a React state setter has — so a test that only asserted "was
  * called" would pass while the table asked for the wrong column. Applying the
- * updater is what useTicketSort does with it, so this is the real answer.
+ * updater is what useTicketListQuery does with it, so this is the real answer.
  */
 function sortingAfterClickingHeader(
   headerName: string,
@@ -136,9 +136,16 @@ describe("TicketsTable", () => {
     }
   });
 
-  // Unreachable from E2E, in both databases: five workers share one test
+  // **This said "unreachable from E2E" until 2026-11-19 and filtering made that
+  // false.** The reason was sound while it held — five workers share one test
   // database and the other ticket specs insert rows, and the dev database stops
-  // being empty the moment anyone smoke-tests the page.
+  // being empty the moment anyone smoke-tests the page — but a filter that
+  // matches nothing empties a full table, so `e2e/tickets-filter.spec.ts` now
+  // asserts this same sentence in a real browser.
+  // The case stays here anyway, and the reason is different from "E2E cannot":
+  // this is where the empty body's **width** is checked against the rendered
+  // header count, which is the agreement the table exists to hold. The E2E test
+  // reads the words; this one reads the colSpan.
   it("says the list is empty across the full width of the table", () => {
     renderTable({ tickets: [], isPending: false });
 
@@ -215,7 +222,7 @@ describe("TicketsTable — what each cell says", () => {
 
 describe("TicketsTable — asking for a different order", () => {
   // The agreement columns.tsx cannot state in types: each column's id has to be
-  // a TicketSortField, because useTicketSort sends the clicked id as `sortBy`.
+  // a TicketSortField, because useTicketListQuery sends the clicked id as `sortBy`.
   // An id that is not one does not throw — the hook's safeParse refuses it and
   // the click does nothing — so this is the thing that catches it, one case per
   // column.
