@@ -30,7 +30,37 @@
     // output. **When to extract a unit** in CLAUDE.md is the real rule.
     // max-lines (whole file) stays: it fired once, on a spec file holding three
     // verbs, and splitting it was right.
-    "max-lines": ["warn", { "max": 300 }]
+    //
+    // **skipComments/skipBlankLines were missing here until 2026-11-19, and
+    // this config was the only one of the three counting prose.** It is drift
+    // that accumulated across three commits, each of which touched this rule
+    // somewhere else:
+    //   - 77c0154 (10-20) put both options on **max-lines-per-function** in the
+    //     root and here, with the reason in its message: the house style is
+    //     dense explanatory comments, so counting them measures how much a file
+    //     *explains* rather than how much it does.
+    //   - 5214801 (10-24) put them on **max-lines** in the **root**.
+    //   - e137b42 (10-26) put them on **max-lines** in the **server**, and
+    //     deleted max-lines-per-function everywhere — taking that reason with
+    //     it.
+    // This file's max-lines never got them. (An earlier version of this comment
+    // credited e137b42 with the root as well; checked and wrong — the root's
+    // line appears there as unchanged context.)
+    //
+    // Found when the filter tests pushed use-ticket-list-query.test.ts to 323
+    // raw lines: 115 comments and blanks, 208 code. Under the other two
+    // configs it had never been close.
+    //
+    // **Be plain that this changed a rule rather than splitting a file.** The
+    // threshold is untouched and the rule still bites — a 310-line file of
+    // nothing but `export const` warns, checked. Splitting was the alternative
+    // and was rejected on its merits: the tests the warning would have
+    // separated are the ones where a sort and a filter interact, and those
+    // belong to neither half.
+    "max-lines": [
+      "warn",
+      { "max": 300, "skipComments": true, "skipBlankLines": true }
+    ]
   },
   // Layer direction, enforced. `pages` may import `features`, and both may
   // import the shared folders — never the other way round. oxlint has no

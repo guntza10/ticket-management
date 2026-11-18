@@ -148,6 +148,56 @@ describe("TicketsPage", () => {
     });
   });
 
+  // The filters travel the same way the sort does, and the same gap applies:
+  // nothing else here would notice a page that read them off the URL and then
+  // failed to put them in the request.
+  it("asks for the filters the URL is already showing", async () => {
+    respondWith([TICKET]);
+
+    renderTicketsPage("/tickets?status=open&category=refund_request&search=csv");
+
+    await screen.findByRole("cell", { name: TICKET.subject });
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      "/api/tickets",
+      expect.objectContaining({
+        params: {
+          sortBy: "createdAt",
+          sortOrder: "desc",
+          status: "open",
+          category: "refund_request",
+          search: "csv",
+        },
+      }),
+    );
+  });
+
+  // The filter half of "refetches in the new order when a header is clicked",
+  // and the only test that joins the toolbar to a request: typing writes the
+  // URL after a pause, and the URL is what the next request is built from.
+  //
+  // Real timers rather than fake ones, because React Query is between the two
+  // ends and faking the clock under it buys a second thing to get right.
+  // `vi.waitFor` outlasts the 300ms debounce on its own.
+  it("refetches with the search once the typing settles", async () => {
+    respondWith([TICKET]);
+
+    renderTicketsPage();
+    await screen.findByRole("cell", { name: TICKET.subject });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Search tickets" }), {
+      target: { value: "csv" },
+    });
+
+    await vi.waitFor(() => {
+      expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+        "/api/tickets",
+        expect.objectContaining({
+          params: { sortBy: "createdAt", sortOrder: "desc", search: "csv" },
+        }),
+      );
+    });
+  });
+
   // Unreachable from E2E without breaking the server on purpose.
   it("surfaces the message when the first load fails", async () => {
     vi.mocked(api.get).mockRejectedValue(

@@ -28,6 +28,15 @@ import type { TicketListQuery } from "../../../../../core/schemas/tickets.ts";
  * goes in as one element rather than spread into several, which is the safer
  * side of the hashing rule — object key order does not affect the hash, array
  * item order does.
+ *
+ * **Since 2026-11-19 the same object carries the three filters, for the same
+ * reason and with nothing here needing to change** — `TicketListQuery` grew and
+ * `list()` takes the whole of it. The server decides *which* rows exactly as it
+ * decides their order, so each combination of filters is a different answer and
+ * a different entry. Written down because the code no longer shows it: a reader
+ * seeing only the sort mentioned could "simplify" this to
+ * `list({ sortBy, sortOrder })`, which `tsc` would accept and which would then
+ * serve one cache entry to two different searches.
  */
 export const ticketKeys = {
   all: () => ["tickets"] as const,
