@@ -21,8 +21,10 @@ Current specs:
   them is next touched
 - `session.spec.ts` — session survives a reload; log out really ends it, including
   against the Back button
-- `auth-api.spec.ts` — `GET /api/me` (401 / 200), public sign-up being refused,
-  and how the API treats odd email spellings
+- `auth-api.spec.ts` — the session guard on a real route (`GET /api/tickets`, 401 / 200)
+  and who `get-session` says is signed in, public sign-up being refused, and how the API
+  treats odd email spellings. It asked `GET /api/me` until that scaffolding route was
+  deleted on 2026-11-19
 - `security.spec.ts` — the session cookie is httpOnly and signature-checked, plus the
   two origin gates side by side: CORS answers a foreign origin without granting it
   read permission, while `trustedOrigins` refuses it outright with 403

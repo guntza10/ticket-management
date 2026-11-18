@@ -1,5 +1,6 @@
 import { test, expect, type APIResponse } from "@playwright/test";
 import { ADMIN, API_URL, signIn } from "./support/auth";
+import { TICKETS_URL } from "./support/tickets";
 
 const CLIENT_ORIGIN = "http://localhost:5174";
 const FOREIGN_ORIGIN = "http://evil.local";
@@ -31,8 +32,8 @@ test.describe("Session cookie", () => {
 
     // ...and the session is genuinely working, so the assertion above is not
     // passing merely because the user is signed out.
-    const me = await page.request.get(`${API_URL}/api/me`);
-    expect(me.status()).toBe(200);
+    const guarded = await page.request.get(TICKETS_URL);
+    expect(guarded.status()).toBe(200);
   });
 
   test("is rejected once its signature is tampered with", async ({
@@ -55,14 +56,14 @@ test.describe("Session cookie", () => {
     // A context of its own, so only the cookie set here is sent.
     const context = await playwright.request.newContext();
     try {
-      const tamperedResponse = await context.get(`${API_URL}/api/me`, {
+      const tamperedResponse = await context.get(TICKETS_URL, {
         headers: { cookie: tampered },
       });
       expect(tamperedResponse.status()).toBe(401);
 
       // Control: the untouched cookie is accepted, which proves the 401 above
       // comes from the tampering and not from the way this request is built.
-      const validResponse = await context.get(`${API_URL}/api/me`, {
+      const validResponse = await context.get(TICKETS_URL, {
         headers: { cookie: valid },
       });
       expect(validResponse.status()).toBe(200);
@@ -94,7 +95,7 @@ test.describe("CORS — the browser-side gate (200, permission withheld)", () =>
       data: credentials,
     });
 
-    const response = await request.get(`${API_URL}/api/me`, {
+    const response = await request.get(TICKETS_URL, {
       headers: { origin: FOREIGN_ORIGIN },
     });
 

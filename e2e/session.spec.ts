@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { ADMIN, API_URL, signIn } from "./support/auth";
+import { ADMIN, signIn } from "./support/auth";
+import { TICKETS_URL } from "./support/tickets";
 
 test.describe("Session lifecycle", () => {
   test("keeps the user signed in across a full page reload", async ({
@@ -23,8 +24,8 @@ test.describe("Session lifecycle", () => {
     await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
 
     // The cookie is gone as far as the API is concerned...
-    const me = await page.request.get(`${API_URL}/api/me`);
-    expect(me.status()).toBe(401);
+    const guarded = await page.request.get(TICKETS_URL);
+    expect(guarded.status()).toBe(401);
 
     // ...so the protected route bounces the user again.
     await page.goto("/");

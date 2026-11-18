@@ -1,14 +1,34 @@
 import { test, expect } from "@playwright/test";
 import { ADMIN, AGENT, API_URL, CLIENT_ORIGIN } from "./support/auth";
+import { TICKETS_URL } from "./support/tickets";
 
-test.describe("Auth API — /api/me", () => {
-  test("GET /api/me is 401 without a session", async ({ request }) => {
-    const response = await request.get(`${API_URL}/api/me`);
+/**
+ * These specs asked `GET /api/me` the two questions below until 2026-11-19,
+ * when that route was deleted. It was scaffolding — no part of the app ever
+ * called it, only this suite did — so every spec here was proving the guard on
+ * a route that existed for the specs' benefit.
+ *
+ * The two questions turned out to belong to different routes, which is why one
+ * replacement would not do:
+ *
+ *   - **"is this cookie a session?"** goes to `GET /api/tickets`, a real route
+ *     an agent reaches, guarded by `requireAuth` alone. It answers **401**
+ *     without one.
+ *   - **"who is signed in?"** goes to Better Auth's own
+ *     `GET /api/auth/get-session`, which is what the client's `useSession`
+ *     calls. It cannot answer the first question: measured 2026-11-19, with no
+ *     session it answers **200 with a body of `null`**, not 401 — so a spec
+ *     asserting a refusal there would assert nothing.
+ */
+test.describe("Auth API — the session guard", () => {
+  test("a guarded route is 401 without a session", async ({ request }) => {
+    const response = await request.get(TICKETS_URL);
 
     expect(response.status()).toBe(401);
+    expect(await response.json()).toEqual({ error: "unauthenticated" });
   });
 
-  test("GET /api/me returns the signed-in user's email and role", async ({
+  test("the session says who signed in, with their role", async ({
     request,
   }) => {
     const signInResponse = await request.post(
@@ -20,14 +40,16 @@ test.describe("Auth API — /api/me", () => {
     );
     expect(signInResponse.status()).toBe(200);
 
-    const response = await request.get(`${API_URL}/api/me`);
+    const response = await request.get(`${API_URL}/api/auth/get-session`);
 
     expect(response.status()).toBe(200);
+    // `role` is the half worth pinning: it only reaches this object because
+    // auth.ts declares it in `user.additionalFields`, and without that
+    // declaration every session would answer with the field simply missing.
     expect(await response.json()).toMatchObject({
       user: { email: AGENT.email, name: AGENT.name, role: "agent" },
     });
   });
-
 });
 
 test.describe("Auth API — credentials", () => {
@@ -65,8 +87,7 @@ test.describe("Auth API — credentials", () => {
     expect(signInResponse.status()).toBeGreaterThanOrEqual(400);
 
     // No session was created for the address either.
-    const me = await request.get(`${API_URL}/api/me`);
-    expect(me.status()).toBe(401);
+    expect((await request.get(TICKETS_URL)).status()).toBe(401);
   });
 
   test("normalises the email case on sign-in", async ({ request }) => {
@@ -79,8 +100,10 @@ test.describe("Auth API — credentials", () => {
     );
 
     expect(signInResponse.status()).toBe(200);
-    const me = await request.get(`${API_URL}/api/me`);
-    expect(await me.json()).toMatchObject({
+    // Read back through get-session: the point is which row the upper-cased
+    // address resolved to, which only an answer carrying the email can show.
+    const session = await request.get(`${API_URL}/api/auth/get-session`);
+    expect(await session.json()).toMatchObject({
       user: { email: ADMIN.email, role: "admin" },
     });
   });
@@ -103,7 +126,6 @@ test.describe("Auth API — credentials", () => {
 
     expect(response.status()).toBeGreaterThanOrEqual(400);
 
-    const me = await request.get(`${API_URL}/api/me`);
-    expect(me.status()).toBe(401);
+    expect((await request.get(TICKETS_URL)).status()).toBe(401);
   });
 });

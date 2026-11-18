@@ -6,6 +6,7 @@ import {
   CLIENT_ORIGIN,
   signInViaApi,
 } from "./support/auth";
+import { TICKETS_URL } from "./support/tickets";
 import {
   ALLOWED_FIELDS,
   createUserViaApi,
@@ -103,11 +104,11 @@ test.describe("Users API — deleting", () => {
 
       // Control: the cookie works before the delete, so the 401 below cannot be
       // blamed on the way this context is built.
-      expect((await theirs.get(`${API_URL}/api/me`)).status()).toBe(200);
+      expect((await theirs.get(TICKETS_URL)).status()).toBe(200);
 
       await request.delete(`${API_URL}/api/users/${created.id}`);
 
-      expect((await theirs.get(`${API_URL}/api/me`)).status()).toBe(401);
+      expect((await theirs.get(TICKETS_URL)).status()).toBe(401);
     } finally {
       await theirs.dispose();
     }
