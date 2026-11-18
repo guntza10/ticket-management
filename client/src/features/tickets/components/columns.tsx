@@ -4,11 +4,9 @@ import {
   tableFeatures,
 } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
-import type {
-  TicketCategory,
-  TicketRow,
-  TicketStatus,
-} from "../api/get-tickets";
+import type { TicketStatus } from "../../../../../core/schemas/tickets.ts";
+import type { TicketRow } from "../api/get-tickets";
+import { categoryLabel, statusLabel } from "../labels";
 
 /**
  * Which parts of TanStack Table this table switches on. v9 drops whatever is
@@ -52,9 +50,11 @@ export const ticketTableFeatures = tableFeatures({
 const columnHelper = createColumnHelper<typeof ticketTableFeatures, TicketRow>();
 
 // Keyed by the union rather than built from the value, so a status added to
-// schema.prisma and mirrored into TicketStatus fails to compile here until it
-// is given a label and a variant. The variant is a class and nothing asserts
-// it; the label is what the tests read.
+// core's TICKET_STATUSES fails to compile here until it is given a variant.
+// Nothing asserts a variant — it is a class — which is exactly why it stays
+// here while the two label maps moved to ../labels.ts on 2026-11-19: the words
+// are read by the filter dropdowns too, the colour is this table's business
+// alone.
 const statusVariant: Record<
   TicketStatus,
   "default" | "secondary" | "outline"
@@ -62,18 +62,6 @@ const statusVariant: Record<
   open: "default",
   resolved: "secondary",
   closed: "outline",
-};
-
-const statusLabel: Record<TicketStatus, string> = {
-  open: "Open",
-  resolved: "Resolved",
-  closed: "Closed",
-};
-
-const categoryLabel: Record<TicketCategory, string> = {
-  general_question: "General Question",
-  technical_question: "Technical Question",
-  refund_request: "Refund Request",
 };
 
 /**
@@ -84,7 +72,7 @@ const categoryLabel: Record<TicketCategory, string> = {
  * they are all `ticketColumns.length` now.
  *
  * **Each column's id has to match a `TicketSortField` in
- * `core/schemas/tickets.ts`**, because `useTicketSort` sends the id of the
+ * `core/schemas/tickets.ts`**, because `useTicketListQuery` sends the id of the
  * clicked column as `sortBy`. An id with no matching field does not throw: the
  * hook's `safeParse` refuses it and the click does nothing at all. What catches
  * that is a test rather than a type — *"asks the server for the column that was

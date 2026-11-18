@@ -1,24 +1,23 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { TicketListQuery } from "../../../../../core/schemas/tickets.ts";
+import type {
+  TicketCategory,
+  TicketListQuery,
+  TicketStatus,
+} from "../../../../../core/schemas/tickets.ts";
 import { ticketKeys } from "./query-key";
 
-// Hand-written to mirror the Postgres enums in server/prisma/schema.prisma, the
-// same way UserRow spells out `role` as "agent" | "admin".
+// TicketStatus and TicketCategory were hand-written here until 2026-11-19, on
+// the reasoning that core/ holds only what both workspaces must agree on and
+// the server reads Prisma's generated enums instead of ours. Filtering made
+// that false: `?status=` and `?category=` are validated against the same
+// `ticketListQuerySchema` on both sides, so the two enums now have a real
+// reader per side and belong in core/ by its own rule.
 //
-// Deliberately NOT in core/: that folder holds what *both* workspaces must
-// agree on, and the server does not read these — it reads the enums Prisma
-// generates for it. A file with one reader fails core/'s own rule, and core/
-// may not touch Prisma at all.
-//
-// So nothing enforces the match, and that is a known, recorded gap rather than
-// an oversight: adding a category to the schema means editing this line too.
-// The next thing likely to touch the category set is Phase 5's classifier.
-export type TicketStatus = "open" | "resolved" | "closed";
-export type TicketCategory =
-  | "general_question"
-  | "technical_question"
-  | "refund_request";
+// What that bought is one TypeScript copy instead of two. What it did **not**
+// buy is any link to `server/prisma/schema.prisma` — add a member to the
+// Postgres enum, migrate, forget core/, and nothing goes red anywhere. That gap
+// is unchanged and still recorded in the root CLAUDE.md.
 
 // Mirrors the `select` in GET /api/tickets, which is narrower than the inbound
 // webhook's answer: no `body`, no `bodyHtml`. A list renders neither, and
