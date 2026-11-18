@@ -76,14 +76,21 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
     `server/` gets a test runner, because that is the day a test could aim at them
     without HTTP.
 - **`index.ts` holds wiring, not routes:** middleware order, mounts, the error handler,
-  `listen`. Two handlers are left in it. `/health` stays: it is **liveness** — it answers
-  from the process alone, which is what `playwright.config.ts` polls before a run and
-  what a deployment healthcheck wants. A **readiness** check (one that queries Postgres,
-  so a server with a dead database stops claiming to be healthy) belongs with the
-  deployment work; adding it now would also make an E2E run fail for a reason no test is
-  about. `/api/me` is scaffolding that only the specs use — see **Authorization**.
+  `listen`. **One handler is left in it.** `/health` stays: it is **liveness** — it
+  answers from the process alone, which is what `playwright.config.ts` polls before a run
+  and what a deployment healthcheck wants. A **readiness** check (one that queries
+  Postgres, so a server with a dead database stops claiming to be healthy) belongs with
+  the deployment work; adding it now would also make an E2E run fail for a reason no test
+  is about.
   `GET /` was removed on 2026-11-09: it answered a fixed string and nothing, in the app
-  or in the suite, ever called it.
+  or in the suite, ever called it. **`GET /api/me` was removed on 2026-11-19** for a
+  sharper version of the same reason: it was not unused, it was used *only by the specs*,
+  so eight tests were proving a session guard on a route that existed for their benefit.
+  They now ask `GET /api/tickets` — the first route an agent reaches behind `requireAuth`
+  alone, which is what had to exist before this could go. The two specs that wanted the
+  *identity* rather than the guard moved to Better Auth's own `GET /api/auth/get-session`
+  instead: measured 2026-11-19, that route answers **200 with `null`** when there is no
+  session, so it can say who you are but can never stand in for a refusal.
 - **Imports only ever point downward, and right now nothing but this bullet says so.**
   `index.ts` may import a module; a module (`users/`) may import the shared files at
   `src/` root (`db.ts`, `auth.ts`, `require-*.ts`) and `core/`; those shared files may
@@ -168,6 +175,14 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
 - `requireAdmin` reads `res.locals.session` and therefore **only works mounted after
   `requireAuth`**. `require-auth.ts` augments `Express.Locals` so that session is typed
   (without it every `res.locals.session` is `any`).
+  - **Since `/api/me` was deleted on 2026-11-19, `requireAdmin` is the only reader of
+    `res.locals.session` in the whole server.** `requireAuth` still writes it and the
+    type augmentation still earns its place — removing the augmentation is a `tsc` error
+    in `require-auth.ts`, which is the proof — but no route *handler* reads it any more.
+    Worth knowing rather than worth changing: the first endpoint that needs to know who
+    is calling (a ticket assigned to *me*, a reply attributed to its author) reads it
+    from there, and must not take the caller's identity from a request body or a query
+    parameter instead.
 - **Endpoints returning user data always `select` an allow-list of fields.** A bare
   `findMany()` ships every column the table happens to have, including whatever the next
   migration adds. That list is **one constant per *answer shape*** — not one per resource. For users

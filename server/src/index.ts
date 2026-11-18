@@ -3,7 +3,6 @@ import type { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.ts";
-import { requireAuth } from "./require-auth.ts";
 import usersRouter from "./users/users.routes.ts";
 import ticketsRouter from "./tickets/tickets.routes.ts";
 import inboundEmailRouter from "./tickets/inbound-email.routes.ts";
@@ -27,23 +26,6 @@ app.use(
 app.all("/api/auth/*splat", toNodeHandler(auth));
 
 app.use(express.json());
-
-// Protected demo route: requireAuth returns 401 without a valid session.
-// Return only the fields a client needs. The full session object also carries
-// session.token, ipAddress and userAgent — and the session cookie is httpOnly
-// precisely so scripts can't read the token, so handing it back as JSON here
-// would defeat that.
-app.get("/api/me", requireAuth, (_req, res) => {
-  const { user } = res.locals.session;
-  res.json({
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-    },
-  });
-});
 
 // Each resource lives in its own module, guards included. This file keeps the
 // app's wiring — middleware order, mounts, the error handler — so a route's

@@ -51,7 +51,7 @@ export const auth = betterAuth({
 ```ts
 app.all("/api/auth/*splat", toNodeHandler(auth));   // (1) auth endpoints
 app.use(express.json());                             // (2) parse JSON — หลัง (1)
-app.get("/api/me", requireAuth, (_req, res) => res.json(res.locals.session)); // (3)
+app.use("/api/tickets", ticketsRouter);              // (3) module ที่มี router.use(requireAuth)
 ```
 
 **(1) mount handler**
@@ -94,7 +94,7 @@ export async function requireAuth(req, res, next) {
 
 ## `getSession()` คืนอะไร — object `{ session, user }`
 
-`getSession` (ใน require-auth / `/api/me`) คืน object **2 ส่วน** — เอา row จาก 2 ตารางมาประกอบให้โค้ดใช้ที่เดียว:
+`getSession` (ใน require-auth) คืน object **2 ส่วน** — เอา row จาก 2 ตารางมาประกอบให้โค้ดใช้ที่เดียว:
 ```json
 {
   "session": { "id", "token", "expiresAt", "userId", "ipAddress", "userAgent" },
@@ -107,7 +107,9 @@ export async function requireAuth(req, res, next) {
 | `user` | ข้อมูลคนที่ login (email, `role`, ...) | `user` |
 
 - เป็น **ตัวแทน in-memory ของ row ใน DB** ที่ BA หยิบมาให้โค้ด — โค้ดเราจับก้อนนี้ ไม่ใช่ตาราง
-- require-auth ทำ `res.locals.session = <ก้อนนี้>` → `/api/me` คืนมันออกไป → เราเห็น `user.role`
+- require-auth ทำ `res.locals.session = <ก้อนนี้>` → `requireAdmin` อ่าน `user.role` ต่อจากตรงนั้น
+  (ตั้งแต่ 2026-11-19 มันเป็นผู้อ่านคนเดียว — `/api/me` ที่เคยคืนก้อนนี้ออกไปตรงๆ ถูกลบแล้ว)
+  ส่วนฝั่ง client เห็น `user.role` ผ่าน `GET /api/auth/get-session` ที่ `useSession` เรียก
 - **BA ใส่เฉพาะ field ที่รู้จัก** ใน `user`: default = `id, name, email, emailVerified, image, createdAt, updatedAt`; field เสริม (เช่น `role`) ต้องประกาศผ่าน `additionalFields` (ดู [Auth roles & seeding](auth-roles-and-seeding.md))
 
 ---

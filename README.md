@@ -77,8 +77,12 @@ Run from the repo root:
 | Method | Route | Auth | Description |
 | --- | --- | --- | --- |
 | `ALL` | `/api/auth/*` | — | better-auth handler (sign-in, sign-out, get-session, …) |
-| `GET` | `/api/me` | session | The signed-in user (`id`, `email`, `name`, `role`) |
 | `GET` | `/api/users` | `admin` | All users (`id`, `name`, `email`, `role`, `createdAt`) |
+| `POST` | `/api/users` | `admin` | Create an agent |
+| `PATCH` | `/api/users/:id` | `admin` | Edit a user's profile, and optionally the password |
+| `DELETE` | `/api/users/:id` | `admin` | Soft-delete a user (never an admin) |
+| `GET` | `/api/tickets` | session | The ticket list — `?search=`, `?status=`, `?category=`, `?sortBy=`, `?sortOrder=` |
+| `POST` | `/api/webhooks/inbound-email` | `x-webhook-secret` | Create a ticket from an inbound email |
 | `GET` | `/health` | — | Liveness check (the Playwright run waits on it) |
 
 Unhandled errors funnel through one error-handling middleware at the bottom of

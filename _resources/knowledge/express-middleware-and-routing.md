@@ -468,8 +468,8 @@ try {
 app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));   // ทุก request
 app.all("/api/auth/*splat", toNodeHandler(auth));              // ยกทั้งโซนให้ better-auth
 app.use(express.json());                                       // ทุก request (ต้องอยู่ใต้บรรทัดบน)
-app.get("/api/me", requireAuth, handler);                      // GET เท่านั้น
-app.use("/api/users", usersRouter);                            // แขวน module
+app.get("/health", handler);                                   // GET เท่านั้น · ไม่มี guard
+app.use("/api/users", usersRouter);                            // แขวน module (guard อยู่ในนั้น)
 app.use(errorHandler);                                         // ท้ายสุดเสมอ · 4 พารามิเตอร์
 ```
 

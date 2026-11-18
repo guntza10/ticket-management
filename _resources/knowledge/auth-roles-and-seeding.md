@@ -44,7 +44,7 @@ user: {
   },
 },
 ```
-ทำ 3 อย่าง: (1) **validate** ค่า ∈ agent/admin · (2) **ใส่ role ใน object user/session** ที่ `getSession` คืน (เห็นใน `/api/me`) · (3) **`input: false`**
+ทำ 3 อย่าง: (1) **validate** ค่า ∈ agent/admin · (2) **ใส่ role ใน object user/session** ที่ `getSession` คืน (เห็นได้ที่ `GET /api/auth/get-session`) · (3) **`input: false`**
 
 **ทำไม 2 ชั้น:** schema = "เก็บที่ไหน" (คอลัมน์ DB) · auth.ts = "BA รู้จักไหม" (validate + ใส่ใน session)
 → ถ้าใส่แค่ schema ไม่ใส่ auth.ts: คอลัมน์มีใน DB **แต่ role จะไม่โผล่ใน session** (BA คืนเฉพาะ field ที่รู้จัก)
