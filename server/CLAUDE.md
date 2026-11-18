@@ -363,9 +363,33 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
     caller holding the secret could send `Re: %` and get back any open ticket of any
     address, body included. Confirmed against a running server on 2026-11-09, fixed on
     2026-11-10. Prisma parameterises the value, so this was never SQL injection — it was
-    **pattern** injection, which parameterising does not touch. **Never reach for
-    `mode: "insensitive"` on caller input again**; normalise on write instead, which also
-    cannot be undone by the next person who adds a filter.
+    **pattern** injection, which parameterising does not touch.
+    - **This bullet read "Never reach for `mode: "insensitive"` on caller input again"
+      until 2026-11-19, and `?search=` broke it deliberately.** Saying so here rather
+      than quietly narrowing it, because a rule that gets re-worded the first time it is
+      inconvenient is worth less than one that records what changed its mind.
+      What was actually wrong with the old wording is that it named the *tool* when the
+      fault was in two other things. `Re: %` was a **read primitive across a trust
+      boundary**: the caller held only a shared secret, the comparison was an identity
+      check that had to be exact, and an unescaped `%` turned it into "show me any open
+      ticket". **The rule that survives all of that** is the one `?search=` obeys:
+      never put caller input where a SQL pattern is expected **without escaping the
+      LIKE wildcards**, and never use a pattern match at all where the question is
+      "is this the same row?". A search box is the opposite case: the question is
+      genuinely "does this contain that".
+      - The first version of this rewrite added *"and the caller is a signed-in agent
+        who may already read every row the filter could reveal"*. That clause is a
+        **trust claim, not a rule**, and it is one `searchFilter` edit away from being
+        false — search a column `TICKET_LIST_FIELDS` refuses to return and the filter
+        becomes a read primitive over a value the caller cannot otherwise see. Flagged
+        by the Standards reviewer on 2026-11-19. What the caller may already read is
+        context for *how bad* a slip would be, never permission to skip the escaping,
+        so the rule above does not lean on it. The row in the root `CLAUDE.md`'s Known
+        gaps — the one about three lists that must stay subsets of each other — is
+        where that risk is tracked. See **Tickets (filtering)** for
+      `escapeLike`, which is the half that makes it safe, and note that normalising on
+      write is still the better answer wherever it is available: it is why
+      `subjectNormalized` exists and that column is untouched by this.
   - The guard also requires `status: "open"`, so a reply to a resolved ticket should
     create a new one. **That branch has no test**, because nothing can resolve a ticket
     yet — no `PATCH` endpoint, and the specs reach the database only over HTTP. Written
@@ -407,8 +431,9 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
   same go, the day `GET /api/tickets/:id` wants the full shape** — a genuine second
   reader across files is the trigger, not a line count.
 - **`?sortBy=` and `?sortOrder=` are the app's first query parameters** (2026-11-13),
-  and they are the whole of what the caller may ask for — no filtering, no search, no
-  pagination yet. The order is still the server's: the client names a column and a
+  joined by `?search=`, `?status=` and `?category=` on 2026-11-19 — see
+  **Tickets (filtering)** below. Pagination is the one thing a caller still cannot ask
+  for. The order is still the server's: the client names a column and a
   direction, never an arrangement of rows. Two places deciding one order is how they come
   to disagree, and the server is the one that can still be right once this list is
   paginated — a client sorting what it was sent can only sort the page it can see.
@@ -454,12 +479,17 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
   the trigger is a measured slow query or pagination, not the first `ORDER BY`. There are
   five of them now rather than one, which does not change the rule but is worth knowing
   before reading the note on the model.
-- **The status and category values are hand-written again on the client**
-  (`client/src/features/tickets/api/get-tickets.ts`), because it cannot import a Prisma
-  type and `erasableSyntaxOnly` rules out an enum on both sides. **Nothing enforces that
-  the two agree** — a type-level assertion that did was written and removed the same day
-  for costing more to read than it saved. See the Known gaps table in the root
-  `CLAUDE.md` for what breaks and why it was left open.
+- **The status and category values are hand-written once, in `core/schemas/tickets.ts`.**
+  They sat in `client/src/features/tickets/api/get-tickets.ts` until 2026-11-19 on the
+  reasoning that `core/` holds only what both sides must agree on and the server reads
+  Prisma's generated enums instead. `?status=`/`?category=` made that false: both sides
+  now validate against the same `ticketListQuerySchema`, so each enum has a real reader
+  per side. `TICKET_STATUSES` and `TICKET_CATEGORIES` are exported as arrays, because the
+  client's two filter dropdowns need the list as a **value**.
+  **Nothing still enforces that they match `schema.prisma`** — one TypeScript copy
+  instead of two is all that changed, and a type-level assertion that did enforce it was
+  written and removed the same day for costing more to read than it saved. See the Known
+  gaps table in the root `CLAUDE.md`.
 - **`prisma/seed-tickets.ts` (`db:reseed:tickets`) is dev-only and separate from `prisma/seed.ts` on
   purpose.** `seed.ts` is what `db:seed:test` runs and `e2e/global-setup.ts` runs it
   before every Playwright run, so a ticket seeded there would become a row every ticket
@@ -467,6 +497,56 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
   any database whose name ends in `_test`. It writes `status` and `category` directly,
   which no endpoint can yet, and sets `createdAt` explicitly so newest-first is visible
   without sleeping between inserts.
+
+## Tickets (filtering)
+
+`?search=`, `?status=` and `?category=` on `GET /api/tickets` (2026-11-19). They are
+validated by the same `ticketListQuerySchema` the sort uses, answer the same
+`400 invalid_query` outside their enums, and combine with **AND** — each narrows a
+different question, so OR-ing them would widen rather than narrow.
+
+- **`undefined` is how Prisma spells "no filter"**, so the `where` is written as plain
+  properties (`status, category`) rather than conditional spreads or `if`s. An absent
+  query parameter already *is* `undefined` after the parse, so nothing has to translate
+  between "not asked for" and "no condition". `OR` is the one exception: an empty array
+  matches nothing instead of everything, so the search has to be `undefined` when there
+  is no term.
+- **`?search=` matches three columns** — `subject`, `senderName`, `senderEmail` — all
+  with `contains` + `mode: "insensitive"`. The list renders the address under the name,
+  so somebody reading it will type either.
+- **`escapeLike` is the reason `mode: "insensitive"` is allowed here at all**, and the
+  rule it answers to is in **Tickets (inbound email)** above, which this work rewrote
+  rather than tiptoed around. Postgres reads `%` and `_` as wildcards and **Prisma does
+  not escape the value** — its own ORM 7→8 migration docs say "you write the `%`
+  wildcards yourself". Unescaped, a search for `50%` also returns "5000 units", and
+  `%` alone returns the whole table.
+  - It escapes the **backslash too**, and that one is not decoration: `\` is LIKE's own
+    escape character, so leaving it live lets `\b` mean a literal `b` and disarms the
+    other two. `/[%_]/g` is the plausible wrong version.
+  - `e2e/tickets-api-filter.spec.ts` has one test per character, each pairing a ticket
+    that contains it literally with a control the unescaped pattern would also match.
+    Measured 2026-11-19: removing `escapeLike` turns exactly those three red.
+- **An empty `?search=` is not a bad value, it is the absence of one.** The schema
+  `.trim()`s and turns `""` into `undefined`, the same shape an untouched password field
+  takes in `core/schemas/users.ts`. Refusing it would 400 the moment somebody clears the
+  search box, and the trim is what stops a box holding only spaces from matching every
+  row with a space in it.
+- **The searched columns have to stay a subset of `TICKET_LIST_FIELDS`**, for the same
+  reason the sortable ones do: filtering on a column the answer refuses to return leaks
+  it, because which rows come back tells the caller what the hidden value holds. All
+  three are in the list today and nothing enforces it — the note is on the constant, and
+  the row in the root `CLAUDE.md`'s Known gaps now covers both lists.
+- **Only the negative direction is provable at the API layer**, and the specs say so
+  rather than faking it. The webhook writes `status: open` with no category and nothing
+  can change either, so there is no `resolved` ticket and no categorised ticket in the
+  test database: `?status=resolved` is proven by the created ticket being **absent**, and
+  the category filter the same way. Verified positively by hand against the dev database,
+  which `prisma/seed-tickets.ts` fills with all three statuses and all three categories.
+  It becomes assertable with `PATCH /api/tickets/:id`.
+- **No index on anything filtered**, unchanged by this and for a sharper reason than
+  before: `ILIKE '%term%'` cannot use a btree index at all, so the `createdAt` index that
+  lands with pagination would do nothing for the search. Trigram (`pg_trgm`) is the
+  answer the day the search is measurably slow, and the trigger is still a measurement.
 
 ## Error handling
 

@@ -296,25 +296,31 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     → **a store**. Note the last step: "shared in many places" argues for Context, not
     for a store. A store needs a second reason — re-renders that need selectors, update
     logic worth keeping in one place, reads from outside React, or devtools.
-  - **The ticket list's sort is in the URL, and it is the first proof of that rule
-    rather than a plan.** `useTicketSort` (`features/tickets/hooks/`) reads `sortBy` and
-    `sortOrder` out of `useSearchParams`, and that is the page's only sorting state —
-    `TicketsPage` holds none of its own. A sort is where the person is looking, not a
-    detail of how the page is drawn: in the URL it survives a refresh, the back button
-    undoes it, and the view is shareable as a link. A store does none of those. Filters,
-    search and page belong in the same place when they arrive; none of them exists yet.
-    Two details of that hook are load-bearing and neither is obvious.
-    **Every parameter read out of the URL needs `?? undefined`.** zod's `.default()`
-    fires on `undefined` and never on `null`, while `searchParams.get()` answers `null`
-    for a parameter that is not there — so without it a URL carrying one half of the sort
-    fails the parse and reverts to newest-first. That half-a-sort URL is not an edge
-    case: it is what the app itself writes, because `toSearchParams` drops whichever half
-    already matches the default, so a click on Status produces exactly `?sortBy=status`.
+  - **The ticket list's whole question lives in the URL — the sort and all three
+    filters.** `useTicketListQuery` (`features/tickets/hooks/`) reads `sortBy`,
+    `sortOrder`, `search`, `status` and `category` out of `useSearchParams` and that is
+    the page's only state of either kind; `TicketsPage` holds none at all. It was
+    `useTicketSort` until 2026-11-19, and the rename is the point: a hook named for the
+    sort that also decides what `?status=` does is a worse name than a longer one.
+    Where the person is looking is not a detail of how the page is drawn — in the URL it
+    survives a refresh, the back button undoes it, and the view is shareable as a link.
+    A store does none of those. Pagination belongs here too; it is the one part still
+    missing.
+    Four details are load-bearing and none is obvious.
+    **Every parameter read out of the URL needs `?? undefined`** — five of them now.
+    zod's `.default()` fires on `undefined` and never on `null`, `.optional()` has the
+    same gap, and `searchParams.get()` answers `null` for a parameter that is not there,
+    so without it a URL carrying only *some* of these fails the parse and reverts to the
+    unfiltered default. That partial URL is not an edge case: it is what the app itself
+    writes, because `toSearchParams` leaves out whatever matches the default, so a click
+    on Status produces exactly `?sortBy=status` and typing produces exactly `?search=…`.
     Found by mutation testing on 2026-11-14 — removing the `??` broke nothing until
-    *"fills in the half of the sort the URL leaves out"* was written for it, and that test
-    still goes red without it.
-    **The cost is that filtering and pagination each need their own**, and forgetting one
-    reproduces the fault for that parameter alone.
+    *"fills in the half of the sort the URL leaves out"* was written for it.
+    **Be exact about what guards them, because it is not one test per `??`:** removing
+    the one after a parameter breaks every URL that *omits* that parameter, so the test
+    naming it is the one that survives. Measured 2026-11-19 — deleting `status`'s turns
+    9 tests red across the hook's file and `TicketsPage.test.tsx`, including the
+    search-only and category-only cases and **not** the status-only one.
     `safeParse(Object.fromEntries(searchParams))` removes the condition rather than
     guarding it, and was **tried on 2026-11-16 and reverted on 2026-11-17 by preference** —
     reading each parameter by name is the clearer of the two. Worth recording so it is not
@@ -322,14 +328,35 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     `DOM.Iterable` in `lib`, which `tsc` here does not demand only because `@types/node`
     leaks an iterable `URLSearchParams` into the client's program (own row in the root
     `CLAUDE.md` Known gaps).
-    And **a sort equal to the server's default writes no parameters at all**, so
-    `/tickets` stays `/tickets` — which is also why the half-a-sort case exists.
+    **`toSearchParams` takes the whole query and rebuilds the string**, which is what
+    closed a landmine `clean-code-reviewer` flagged on 2026-11-16: it used to start from
+    an empty `URLSearchParams` while being handed only the sort, so once filters existed
+    a click on a header would have cleared the search box and both dropdowns. Rebuilding
+    from a complete `TicketListQuery` removes the thing to remember — a parameter can
+    only be dropped by being left out of that one function. `onSortingChange` and
+    `setFilters` both spread over the current query for the same reason, and the two
+    tests that hold it are *"keeps the filters when a header is clicked"* and *"keeps the
+    sort when a filter changes"*; each is the only one that goes red for its own spread.
+    And **a value equal to the server's default writes no parameter at all**, so
+    `/tickets` stays `/tickets`.
+    **`replace` is the caller's decision, not the hook's.** `setFilters` takes
+    `{ replace?: boolean }` and passes it straight through. A debounced keystroke sends
+    `replace: true` — typing is not a navigation, and without it every pause mid-word
+    leaves a history entry, so leaving a search would take several presses of back. A
+    dropdown and a header push. Proven the only way it can be, by trying to go back:
+    MemoryRouter clamps `go(-1)` at the first entry, so "nothing moved" is the assertion.
     **`sorting` and `onSortingChange` travel together everywhere** — out of the hook,
     through `TicketsPage`, into `TicketsTable` — which `clean-code-reviewer` named as a
-    pair wanting to be one type (2026-11-16). Two props is not worth a type; **the
-    trigger is the third pair**, because filtering and pagination each arrive as the same
-    shape and six props threaded through a page that uses none of them is the point at
-    which passing the `table` instance, or `children`, costs less.
+    pair wanting to be one type (2026-11-16). Two props is not worth a type, and the
+    trigger named then was "the third pair, because filtering and pagination each arrive
+    as the same shape and six props threaded through a page that uses none of them is the
+    point at which passing the `table` instance, or `children`, costs less".
+    **Filtering arrived on 2026-11-19 and that prediction was wrong about the shape.**
+    The filters do not thread through to the table at all — they go to a *different*
+    child, so the page passes 2 props to `TicketsFilters` and 4 to `TicketsTable` rather
+    than 6 to one. Nothing was restructured. Kept here rather than deleted because the
+    next person to read it should know the trigger has already fired once without biting;
+    **pagination is the real test of it**, since a page number does go to the table.
   - **Never park server data in a store.** That is a second cache beside the one
     TanStack Query already keeps, and then nothing says which of the two is right.
 - **Server errors from a mutation go through `setError`, not a second dialog.** A 409
@@ -390,13 +417,63 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
 - `src/features/<domain>/` — everything that only one domain uses, e.g.
   `features/users/components/` (`CreateUserDialog`, `CreateUserForm`,
   `EditUserDialog`, `EditUserForm`, `DeleteUserDialog`, `UsersTable` plus its own
-  `columns.tsx`) and `features/tickets/components/` (`TicketsTable` plus its
-  `columns.tsx`). **Each `columns.tsx` holds that table's TanStack column definitions,
-  the `features` it switches on, and whatever label maps its cells read** — the status
-  and category maps for tickets, the `Deleted` badge and the edit/delete dialogs for
-  users. The two are deliberately not shared: a column added to the roster says nothing
-  about the ticket list. Tickets has no dialogs at all, because a ticket's only writer is
-  the inbound-email webhook.
+  `columns.tsx`) and `features/tickets/components/` (`TicketsTable` and
+  `TicketsFilters`, each plus its own `columns.tsx` for the table).
+  **Each `columns.tsx` holds that table's TanStack column definitions, the `features` it
+  switches on, and whatever label maps only its cells read** — the `Deleted` badge and
+  the edit/delete dialogs for users, the `Badge` variant per status for tickets. The two
+  are deliberately not shared: a column added to the roster says nothing about the ticket
+  list. Tickets has no dialogs at all, because a ticket's only writer is the
+  inbound-email webhook.
+  - **`features/tickets/labels.ts` is the one thing at a feature's root** (2026-11-19),
+    holding `statusLabel` and `categoryLabel`. They were in `columns.tsx` until the
+    filter dropdowns became a second reader of the same words: a copy beside the dropdown
+    is a thing that must agree with the table and nothing would say when it stopped —
+    rename a category and the two would disagree about one ticket. Neither consumer owns
+    them, so neither folder is their home. **Keyed by the union, not built from the
+    array**, so a new member fails to compile until somebody writes its words; built with
+    `.map()` it would render as `refund_request` and nothing would complain.
+    The `Badge` variant stayed in `columns.tsx` because it is a class, nothing asserts it,
+    and the dropdowns do not draw badges.
+  - **`useDebouncedSearch` — refused for now** (2026-11-19), raised by
+    `clean-code-reviewer` and it genuinely scores: the draft, the timer, the latest-ref
+    and the URL sync are ~25 lines that can each be wrong on their own (Q2), and the
+    test file has already split itself along that line — six of its eight cases and the
+    whole `Harness` aim at the search box alone (Q3). That is the same score
+    `useTicketSort` used to open `hooks/` on 2026-11-13, so the precedent exists.
+    What declined it is Q4 and the price of churn: one caller, and extracting now would
+    rewrite a test file that is green and proven able to fail, at the end of a change
+    where everything else is settled. **Trigger: a second debounced control, or
+    pagination arriving at this toolbar** — either makes the timing logic something two
+    things share rather than one component's detail.
+  - **`TicketsFilters` owns the half-typed search term and nothing else** — the URL owns
+    the filters. It scores on question 2 of **When to extract a unit** (a `draft`, a
+    debounce timer, a sync back from the URL — all able to be wrong on their own) and
+    question 3, not on question 4.
+    Three details inside it are load-bearing. **The debounce lives in the event handler,
+    not an effect**, because it reacts to a keystroke rather than keeping a value in sync
+    — React's own line between the two — which also means it cannot fire on mount and
+    cannot restart whenever a render recreates `onChange`.
+    **It calls `onChange` through a ref**, and that is a real bug fixed rather than
+    caution: `setFilters` upstream is rebuilt every render with that render's query baked
+    in, so a copy captured 300ms earlier writes its patch over a stale query — choosing a
+    status between the keystroke and the commit made the status disappear. Note that
+    `setSearchParams`'s updater form does **not** fix it: that setter is itself rebuilt
+    per render and hands the updater its own render's params. The guard is *"keeps a
+    filter chosen while the search was still being typed"*; measured 2026-11-19, calling
+    the prop instead of the ref turns that one test red and nothing else.
+    **A dropdown is named by a real `<label htmlFor>` + `useId`, not `aria-label`** —
+    the shape Radix's own docs use. `aria-label` outranks the trigger's content in the
+    accessible-name computation, and that content is `SelectValue`, the words saying what
+    is selected right now. The label is `sr-only` because the toolbar has no room for
+    three visible ones. Honest limit: the test pins the accessible *name*, so the label
+    cannot be dropped silently, but jsdom models the name computation rather than what a
+    screen reader announces — it cannot show the value is now read out too.
+    The "no filter" option's value is `"__any__"` rather than `"all"`, because Radix
+    refuses `value=""` and "not a member of the enum" is the whole mechanism: the handler
+    looks the chosen value up in the real array with `.find`, so anything not in it comes
+    back `undefined`. Spelled with underscores so a future status called `all` could not
+    collide with it.
 - `src/components/` — components **two or more** features or pages use
   (`NavBar`, `ProtectedRoute`, `ErrorDialog`, `PasswordInput`);
   `src/components/ui/` — shadcn (generated)
@@ -405,14 +482,16 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   `create-user.ts`, `update-user.ts`, `delete-user.ts`, and `query-key.ts` holding the
   `userKeys` factory all four name. `features/tickets/api/` holds `get-tickets.ts`
   (`useTickets` + `TicketRow`) and its own `query-key.ts` exporting `ticketKeys`; no
-  mutation files yet, because nothing writes a ticket from the UI. **`get-tickets.ts`
-  also hand-writes the `TicketStatus` and `TicketCategory` unions**, the way `UserRow`
-  hand-writes `role`: the client cannot import a Prisma type and `erasableSyntaxOnly`
-  rules out an enum on both sides. Nothing enforces that those literals still match
-  `schema.prisma` — a type-level assertion that did was written and removed the same day
-  for costing more to read than it saved, and the gap is recorded in the root
-  `CLAUDE.md`. `TicketRow.id` is a **number**, unlike `UserRow.id`, because `Ticket.id`
-  is an `Int`.
+  mutation files yet, because nothing writes a ticket from the UI.
+  **`get-tickets.ts` imported `TicketStatus` and `TicketCategory` from `core/` on
+  2026-11-19 instead of hand-writing them**, the way it had since the feature existed.
+  What moved the line was filtering: `?status=`/`?category=` are validated by the shared
+  `ticketListQuerySchema`, so each enum gained a real reader per side, which is `core/`'s
+  own test for belonging there — and the dropdowns need the list as a **value**, which a
+  type cannot give. `UserRow` still hand-writes `role`, because nothing shared validates
+  it. **Nothing still enforces that those literals match `schema.prisma`**; one copy
+  instead of two is all that changed, and the gap stays recorded in the root `CLAUDE.md`.
+  `TicketRow.id` is a **number**, unlike `UserRow.id`, because `Ticket.id` is an `Int`.
 - **A feature's keys live in one `query-key.ts` object — a query factory** — which is
   the shape TanStack Query's own docs use (`all()`, `list()`, later `detail(id)`), and
   both features were converted to it on 2026-11-14. Two loose exports, a `SCREAMING_SNAKE`

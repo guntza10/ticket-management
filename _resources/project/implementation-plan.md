@@ -55,18 +55,23 @@ unfinished half named on the line itself
 - [x] Implement list tickets API endpoint — `GET /api/tickets`, newest first, **no query
       parameters at all**, guarded by `requireAuth` alone (both roles). Its own allow-list,
       narrower than the webhook's: no `body`, no `bodyHtml`
-- [~] Add filtering (status, category) and sorting to the list endpoint — **sorting
+- [x] Add filtering (status, category) and sorting to the list endpoint — **sorting
       done** 2026-11-13: `?sortBy=` + `?sortOrder=` over five columns, validated against
       `TICKET_SORT_FIELDS` in `core/schemas/tickets.ts`, `400 invalid_query` outside it,
-      `id desc` as a second key on every answer. **Filtering is not done** and is the
-      next unit
+      `id desc` as a second key on every answer. **Filtering done** 2026-11-19:
+      `?status=` + `?category=` over the same schema, plus **`?search=`** which the
+      step did not ask for — a search over `subject`, `senderName` and `senderEmail`,
+      case-insensitive, with LIKE wildcards escaped. All three AND together
 - [ ] Implement get ticket API endpoint
 - [ ] Implement update ticket API endpoint (change status, assign agent)
 - [x] Create ticket list page — a table at `/tickets`, newest first, no controls
-- [~] Add the filtering and sorting UI — **sorting done**: every column header on
+- [x] Add the filtering and sorting UI — **sorting done**: every column header on
       `/tickets` sorts, built on TanStack Table v9 with `manualSorting`, and the sort
       lives in the URL (`?sortBy=&sortOrder=`) rather than in component state, so a
-      refresh keeps it and the back button undoes it. **Filtering UI is not done**
+      refresh keeps it and the back button undoes it. **Filtering UI done** 2026-11-19:
+      `TicketsFilters` above the table — a 300ms-debounced search box and one dropdown
+      per enum — in the same URL, so every filter is shareable, refresh-proof and
+      undoable with the back button
 - [ ] Create ticket detail page
 
 > **[ours]** This note used to say the create-ticket step would use a manual form as a
