@@ -1,3 +1,5 @@
+import type { UserListQuery } from "../../../../../core/schemas/users.ts";
+
 /**
  * Every cache key the user roster owns, in one object.
  *
@@ -23,8 +25,19 @@
  *
  * `as const` so the arrays are readonly: they are shared by four modules and
  * none of them has any business pushing to one.
+ *
+ * **`list()` takes the query since 2026-11-21, because the server decides which
+ * rows a page holds.** Page 2 is a different answer from page 1, so it has to
+ * be a different cache entry — one key for both would serve page 1's rows to
+ * page 2 until something refetched. The query goes in as **one object element**
+ * rather than spread into several: React Query hashes object keys in a stable
+ * order, array positions it does not.
+ *
+ * The three mutations still invalidate `all()` and were not touched, which is
+ * the prefix relationship doing its job — every page of the roster is cleared
+ * by one call, including pages the admin is not looking at.
  */
 export const userKeys = {
   all: () => ["users"] as const,
-  list: () => [...userKeys.all(), "list"] as const,
+  list: (query: UserListQuery) => [...userKeys.all(), "list", query] as const,
 };

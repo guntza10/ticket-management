@@ -1,6 +1,7 @@
 import { useUsers } from "@/features/users/api/get-users";
 import CreateUserDialog from "@/features/users/components/CreateUserDialog";
 import UsersTable from "@/features/users/components/UsersTable";
+import { useUserListQuery } from "@/features/users/hooks/use-user-list-query";
 import NavBar from "@/components/NavBar";
 import {
   Card,
@@ -16,7 +17,16 @@ import {
 // to the mutations that invalidate that same key — naming a different one there
 // is the silent failure this arrangement is for.
 export default function UsersPage() {
-  const { data: users, isPending, error } = useUsers();
+  // Which page to show lives in the URL, not in state here — a refresh keeps
+  // it, the back button walks back through the pages, and the view is a link
+  // somebody can send. Same arrangement as /tickets, minus the sort and the
+  // filters it has no controls for: the hook hands the page to the table in
+  // TanStack's spelling, and the footer that moves between pages lives inside
+  // `UsersTable`, where the table instance it reads is built.
+  const { listQuery, pagination, onPaginationChange } = useUserListQuery();
+  // The whole response: `total` is the count the footer divides by the page
+  // size, and `users.length` cannot answer that.
+  const { data, isPending, error } = useUsers(listQuery);
 
   return (
     <div className="min-h-screen bg-muted">
@@ -43,8 +53,14 @@ export default function UsersPage() {
             {error && (
               <p className="text-destructive mb-4">{error.message}</p>
             )}
-            {(isPending || users) && (
-              <UsersTable users={users} isPending={isPending} />
+            {(isPending || data) && (
+              <UsersTable
+                users={data?.users}
+                isPending={isPending}
+                pagination={pagination}
+                onPaginationChange={onPaginationChange}
+                rowCount={data?.total}
+              />
             )}
           </CardContent>
         </Card>

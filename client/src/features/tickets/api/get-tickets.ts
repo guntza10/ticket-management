@@ -39,29 +39,50 @@ export type TicketRow = {
   createdAt: string;
 };
 
+/**
+ * What GET /api/tickets answers: one page of rows, and how many rows match the
+ * filters in total.
+ *
+ * `total` is the whole matching set, not this page's length — the footer needs
+ * it to say how many pages there are, and `tickets.length` can only ever say
+ * 10. Neither `page` nor `pageSize` comes back: the caller sent the first and
+ * the second is `PAGE_SIZE`, which both sides import from core/.
+ */
+export type TicketListResponse = {
+  tickets: TicketRow[];
+  total: number;
+};
+
 async function getTickets(
   signal: AbortSignal,
   query: TicketListQuery,
-): Promise<TicketRow[]> {
-  const { data } = await api.get<{ tickets: TicketRow[] }>("/api/tickets", {
+): Promise<TicketListResponse> {
+  // The whole response, where this used to unwrap `data.tickets`. Returning
+  // only the rows would leave `total` nowhere — and putting it in a second
+  // query would ask the server to count a filtered set twice.
+  const { data } = await api.get<TicketListResponse>("/api/tickets", {
     signal,
     params: query,
   });
-  return data.tickets;
+  return data;
 }
 
 /**
  * The ticket list in the order the server put it in.
  *
- * `query` says which column and direction to *ask* for; it never says how to
- * arrange what comes back. Nothing here re-sorts the rows — two places deciding
- * one order is how they come to disagree, and once this list is paginated the
- * client would only be able to sort the page it can see.
+ * `query` says which column, direction and page to *ask* for; it never says how
+ * to arrange what comes back. Nothing here re-sorts the rows — two places
+ * deciding one order is how they come to disagree, and since this list is
+ * paginated the client only ever holds the page it can see, so a client-side
+ * sort would reorder ten rows out of forty and call it sorted.
  *
  * `keepPreviousData` is what makes a sort click feel like a sort rather than a
  * reload: the key changes, so without it React Query has no data for the new
  * key and the table falls back to its skeleton for the length of a round trip.
- * With it the rows that are on screen stay there until the new ones arrive.
+ * With it the rows that are on screen stay there until the new ones arrive —
+ * which now covers paging too, and matters more there: the footer reads `total`
+ * off this data, so without it every page click would blank the row count and
+ * disable its own buttons for a round trip.
  */
 export function useTickets(query: TicketListQuery) {
   return useQuery({

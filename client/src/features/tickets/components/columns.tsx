@@ -1,5 +1,6 @@
 import {
   createColumnHelper,
+  rowPaginationFeature,
   rowSortingFeature,
   tableFeatures,
 } from "@tanstack/react-table";
@@ -17,6 +18,12 @@ import { categoryLabel, statusLabel } from "../labels";
  * `sortedRowModel` is deliberately absent and `manualSorting` is set where the
  * table is built: Postgres does the sorting, and a client-side sorted row model
  * would quietly re-sort the page it was handed.
+ *
+ * `rowPaginationFeature` is the same arrangement one line down: it brings the
+ * pagination state and the navigation APIs the footer reads, while
+ * `paginatedRowModel` stays absent and `manualPagination` is set beside
+ * `manualSorting`. The server already sliced the page; a paginated row model
+ * here would slice the ten rows it was handed a second time.
  *
  * `columnMeta` types the extra field each column carries — v9 takes it per
  * table here rather than by declaration-merging a global interface, so one
@@ -44,6 +51,7 @@ type TicketColumnMeta = {
 
 export const ticketTableFeatures = tableFeatures({
   rowSortingFeature,
+  rowPaginationFeature,
   columnMeta: {} as TicketColumnMeta,
 });
 

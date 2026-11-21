@@ -21,12 +21,23 @@ import {
 // holds no state at all; useTicketListQuery reads the URL and hands back every
 // spelling of the query that something below needs.
 //
-// Pagination is the one part of that question still missing, and it belongs in
-// the same place when it arrives.
+// Pagination went in the same place, so the page is still stateless: `?page=`
+// is read out of the URL by the same hook, handed to the table in TanStack's
+// own spelling, and the footer that moves between pages lives inside the table
+// because that is where the instance it reads is built.
 export default function TicketsPage() {
-  const { listQuery, sorting, onSortingChange, setFilters } =
-    useTicketListQuery();
-  const { data: tickets, isPending, error } = useTickets(listQuery);
+  const {
+    listQuery,
+    sorting,
+    onSortingChange,
+    setFilters,
+    pagination,
+    onPaginationChange,
+  } = useTicketListQuery();
+  // The whole response, not just the rows: `total` is what the footer divides
+  // by the page size to know how many pages there are, and `tickets.length`
+  // cannot answer that — it is 10 on every page but the last.
+  const { data, isPending, error } = useTickets(listQuery);
 
   return (
     <div className="min-h-screen bg-muted">
@@ -48,12 +59,15 @@ export default function TicketsPage() {
                 means a failed *first* load — no rows, nothing in flight —
                 renders no table at all. */}
             {error && <p className="text-destructive mb-4">{error.message}</p>}
-            {(isPending || tickets) && (
+            {(isPending || data) && (
               <TicketsTable
-                tickets={tickets}
+                tickets={data?.tickets}
                 isPending={isPending}
                 sorting={sorting}
                 onSortingChange={onSortingChange}
+                pagination={pagination}
+                onPaginationChange={onPaginationChange}
+                rowCount={data?.total}
               />
             )}
           </CardContent>

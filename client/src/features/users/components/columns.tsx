@@ -1,18 +1,30 @@
-import { createColumnHelper, tableFeatures } from "@tanstack/react-table";
+import {
+  createColumnHelper,
+  rowPaginationFeature,
+  tableFeatures,
+} from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import DeleteUserDialog from "./DeleteUserDialog";
 import EditUserDialog from "./EditUserDialog";
 import type { UserRow } from "../api/get-users";
 
 /**
- * Which parts of TanStack Table the roster switches on — and the list is almost
- * empty on purpose.
+ * Which parts of TanStack Table the roster switches on — and the list is short
+ * on purpose.
  *
  * **No `rowSortingFeature`.** The roster is not sortable and is not meant to be:
- * it grows only when an admin adds somebody, and `GET /api/users` takes no query
- * parameters. v9 drops whatever is not registered here out of the bundle, so the
- * sorting code the ticket list needs is simply not shipped on this page. The day
- * the roster wants sorting, it wants the server half first.
+ * it grows only when an admin adds somebody, and the only query parameter
+ * `GET /api/users` takes is `?page=`. v9 drops whatever is not registered here
+ * out of the bundle, so the sorting code the ticket list needs is simply not
+ * shipped on this page. The day the roster wants sorting, it wants the server
+ * half first.
+ *
+ * **`rowPaginationFeature` is registered, and it is the one thing the roster
+ * and the ticket list genuinely share.** It arrived with `?page=` on
+ * 2026-11-21 — not because the project wanted both tables to look alike, but
+ * because paging is the same question on both and `TablePagination` reads it
+ * off the table instance. `paginatedRowModel` is absent and `manualPagination`
+ * is set where the table is built: the server sliced the page already.
  *
  * `columnMeta` is the per-table type for the extra field each column carries,
  * which v9 takes here rather than by declaration-merging a global interface —
@@ -35,6 +47,7 @@ type UserColumnMeta = {
 };
 
 export const userTableFeatures = tableFeatures({
+  rowPaginationFeature,
   columnMeta: {} as UserColumnMeta,
 });
 

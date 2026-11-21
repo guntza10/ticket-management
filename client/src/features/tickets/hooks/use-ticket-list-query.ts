@@ -1,5 +1,11 @@
-import type { OnChangeFn, SortingState } from "@tanstack/react-table";
+import {
+  functionalUpdate,
+  type OnChangeFn,
+  type PaginationState,
+  type SortingState,
+} from "@tanstack/react-table";
 import { useSearchParams } from "react-router";
+import { PAGE_SIZE } from "../../../../../core/schemas/pagination.ts";
 import {
   ticketListQuerySchema,
   type TicketListQuery,
@@ -43,7 +49,16 @@ export type SetTicketFilters = (
  * **Why the URL and not state:** a filter is where the person is looking, not a
  * detail of how the page is drawn. In the URL it survives a refresh, the back
  * button undoes it, and the view can be sent to somebody as a link. A store
- * does none of those. Pagination belongs here too when it arrives.
+ * does none of those.
+ *
+ * Pagination joined it on 2026-11-21 and is the parameter that tests that
+ * reasoning hardest, because it is the one the reference project keeps in
+ * `useState` instead. Two things fall out of the URL that state cannot give:
+ * the fifth page of a search is a link somebody can send, and the back button
+ * walks back through the pages rather than leaving the list at page 5 with a
+ * history entry per keystroke. What it costs is the rule the two setters above
+ * now carry — a filter or a sort change has to write `page: 1` itself, where
+ * the reference gets it from a `useEffect` on the filters.
  *
  * It also translates, because the two sides spell a sort differently —
  * TanStack Table wants `[{ id, desc }]` and the API wants
@@ -103,6 +118,7 @@ export function useTicketListQuery() {
     search: searchParams.get("search") ?? undefined,
     status: searchParams.get("status") ?? undefined,
     category: searchParams.get("category") ?? undefined,
+    page: searchParams.get("page") ?? undefined,
   });
   const listQuery = parsed.success ? parsed.data : DEFAULT_QUERY;
 
@@ -113,7 +129,10 @@ export function useTicketListQuery() {
   const onSortingChange: OnChangeFn<SortingState> = (updater) => {
     // TanStack hands over either the next value or a function that computes it
     // from the current one, the same contract a React state setter has.
-    const next = typeof updater === "function" ? updater(sorting) : updater;
+    // `functionalUpdate` is the library's own name for resolving that pair —
+    // written out by hand here until 2026-11-21, in what became five copies
+    // across the hooks and their tests.
+    const next = functionalUpdate(updater, sorting);
     const [column] = next;
     if (!column) return;
 
@@ -129,6 +148,12 @@ export function useTicketListQuery() {
       ...listQuery,
       sortBy: column.id,
       sortOrder: column.desc ? "desc" : "asc",
+      // Back to the first page, because page 3 of one order is not page 3 of
+      // another — the rows that were on it are now scattered through the whole
+      // list. Written here and in setFilters rather than in a `useEffect`
+      // watching the query: an effect would also fire on the back button, and
+      // `?sortBy=status&page=3` is a URL somebody may legitimately return to.
+      page: 1,
     });
     if (!nextQuery.success) return;
 
@@ -146,10 +171,68 @@ export function useTicketListQuery() {
    * navigation and pushes, the same as clicking a header.
    */
   const setFilters: SetTicketFilters = (patch, options) => {
-    setSearchParams(toSearchParams({ ...listQuery, ...patch }), options);
+    // `page: 1` last, so it wins over whatever the current query holds. A
+    // filter narrows the list, so the page the caller was on may not exist in
+    // the narrowed one — searching from page 4 would otherwise land on an
+    // empty table with a full toolbar and nothing saying why.
+    setSearchParams(
+      toSearchParams({ ...listQuery, ...patch, page: 1 }),
+      options,
+    );
   };
 
-  return { listQuery, sorting, onSortingChange, setFilters };
+  /**
+   * The page half of the query in the table's own spelling, which is not the
+   * URL's: TanStack counts `pageIndex` from 0 and `?page=` counts from 1.
+   * **The two spellings meet here and in the footer's `+ 1`, nowhere else** —
+   * the same arrangement `sorting` above has, where the hook is what turns
+   * `?sortBy=&sortOrder=` into `[{ id, desc }]`.
+   *
+   * `pageSize` is the constant both workspaces import rather than anything
+   * from the URL, because no control offers a choice. See
+   * `core/schemas/pagination.ts` for why `?pageSize=` is not a parameter and
+   * what would make it one.
+   */
+  const pagination: PaginationState = {
+    pageIndex: listQuery.page - 1,
+    pageSize: PAGE_SIZE,
+  };
+
+  /**
+   * Moves to another page of the same question — the only setter here that
+   * keeps every other parameter exactly as it was, which is the mirror of the
+   * two above forcing `page: 1`.
+   *
+   * It pushes, like a dropdown and a header: paging through a list is a
+   * navigation, and the back button going back a page is what somebody expects
+   * from it.
+   *
+   * It takes TanStack's updater rather than a page number, because the table's
+   * own `nextPage()` / `lastPage()` / `setPageIndex()` all route through this
+   * one callback — which is the whole reason pagination goes through the
+   * instance instead of being wired to buttons by hand.
+   *
+   * **`next.pageSize` is deliberately dropped.** Nothing can change it: there
+   * is no page-size control, and the server slices by the same `PAGE_SIZE`
+   * constant. Honouring it here would write a size into the URL that the
+   * endpoint does not read, which is a view the server cannot answer. The day
+   * a control exists, `?pageSize=` has to arrive in the schema first.
+   */
+  const onPaginationChange: OnChangeFn<PaginationState> = (updater) => {
+    const next = functionalUpdate(updater, pagination);
+    setSearchParams(
+      toSearchParams({ ...listQuery, page: next.pageIndex + 1 }),
+    );
+  };
+
+  return {
+    listQuery,
+    sorting,
+    onSortingChange,
+    setFilters,
+    pagination,
+    onPaginationChange,
+  };
 }
 
 /**
@@ -162,8 +245,9 @@ export function useTicketListQuery() {
  * `URLSearchParams` while being handed only the sort, so every caller had to
  * remember to merge in whatever else the URL held. Rebuilding from a complete
  * query removes the thing to remember: a parameter can only be dropped here by
- * being left out of this function, and that is one place to look. Pagination
- * adds a line here and nothing else.
+ * being left out of this function, and that is one place to look. That claim
+ * was tested by pagination on 2026-11-21 and held: `?page=` cost exactly one
+ * line here, and no caller had to be visited to keep it.
  *
  * Pushed rather than replaced by default: the back button undoing a sort or a
  * filter is one of the reasons they are in the URL at all.
@@ -174,6 +258,7 @@ function toSearchParams({
   search,
   status,
   category,
+  page,
 }: TicketListQuery) {
   const params = new URLSearchParams();
   if (sortBy !== DEFAULT_QUERY.sortBy) params.set("sortBy", sortBy);
@@ -185,5 +270,10 @@ function toSearchParams({
   if (search) params.set("search", search);
   if (status) params.set("status", status);
   if (category) params.set("category", category);
+  // `!== 1` rather than truthiness, and `String()` because a URL holds text:
+  // the first page is what the server answers with no parameter at all, so
+  // page 1 must write nothing or every list would carry `?page=1` the moment
+  // anybody touched it.
+  if (page !== DEFAULT_QUERY.page) params.set("page", String(page));
   return params;
 }
