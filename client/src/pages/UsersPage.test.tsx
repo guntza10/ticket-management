@@ -38,11 +38,13 @@ const AGENT: UserRow = {
 // UsersPage reads `data` and nothing else, so filling in the rest of an
 // AxiosResponse (status, headers, config) would be noise. The cast states that
 // rather than hiding it behind a fake response object nobody reads.
-function respondWith(users: UserRow[]) {
-  vi.mocked(api.get).mockResolvedValue({ data: { users } } as AxiosResponse);
+function respondWith(users: UserRow[], total = users.length) {
+  vi.mocked(api.get).mockResolvedValue({
+    data: { users, total },
+  } as AxiosResponse);
 }
 
-function renderUsersPage() {
+function renderUsersPage(initialUrl = "/users") {
   // A fresh client per test. The real app keeps one at module scope so the
   // cache outlives components — here that is exactly what must not happen, or
   // one test's rows would answer the next test's query. `retry: false` stops
@@ -55,7 +57,7 @@ function renderUsersPage() {
   // context, and routing is cheap enough that faking it would buy nothing.
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialUrl]}>
         <UsersPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -79,6 +81,54 @@ describe("UsersPage", () => {
     // Proves the whole chain: useUsers → the page's props → UsersTable → a row.
     expect(await screen.findByRole("cell", { name: AGENT.email })).toBeVisible();
     expect(screen.getByRole("cell", { name: AGENT.role })).toBeVisible();
+  });
+
+  // **The two tests below are the only thing above the component that reads
+  // `?page=`** — added 2026-11-21 after `clean-code-reviewer` pointed out that
+  // `useUserListQuery` was produced by copying a 200-line hook and deleting two
+  // thirds of it, with nothing between it and a browser.
+  //
+  // **Be exact about what they do and do not catch**, because the obvious claim
+  // is wrong and was measured: deleting the hook's `page: …` read turns the
+  // first one red, while deleting its **`?? undefined`** leaves all four green.
+  // On the ticket list that `??` is load-bearing — a URL carrying only some
+  // parameters fails the parse and loses the others — but the roster has one
+  // parameter, so `null` coerces to 0, the parse fails as a whole, and the
+  // fall-back is page 1: the same answer the `??` would have produced. It is
+  // unobservable here by construction, and it stays for the day the roster
+  // grows a second parameter, which is when it starts mattering.
+  //
+  // What is also **not** covered: the write side. Nothing above
+  // `UsersTable.test.tsx` clicks the footer, so a `toSearchParams` that stopped
+  // writing `?page=` would be caught only in a browser — and the roster has no
+  // browser spec for its footer (a recorded gap in the root CLAUDE.md).
+  it("asks the server for the page the URL is showing", async () => {
+    respondWith([AGENT], 42);
+
+    renderUsersPage("/users?page=3");
+
+    await screen.findByRole("cell", { name: AGENT.email });
+    // The whole chain in one assertion: the URL, the hook's parse, and the
+    // request the roster actually sends.
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      "/api/users",
+      expect.objectContaining({ params: { page: 3 } }),
+    );
+  });
+
+  // The hook's own comment calls this "the one place the mistake would be
+  // invisible": a page the API refuses falls back to page 1, which is the same
+  // answer a bare /users gives, so nothing on screen would look wrong.
+  it("falls back to the first page when the URL names one the API refuses", async () => {
+    respondWith([AGENT], 42);
+
+    renderUsersPage("/users?page=0");
+
+    await screen.findByRole("cell", { name: AGENT.email });
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      "/api/users",
+      expect.objectContaining({ params: { page: 1 } }),
+    );
   });
 
   // Unreachable from E2E without breaking the server on purpose.

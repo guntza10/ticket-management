@@ -1,6 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import {
+  functionalUpdate,
+  type OnChangeFn,
+  type PaginationState,
+} from "@tanstack/react-table";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { PAGE_SIZE } from "../../../../../core/schemas/pagination.ts";
 import UsersTable from "./UsersTable";
 import type { UserRow } from "../api/get-users";
 
@@ -36,19 +42,41 @@ const ADMIN: UserRow = {
   deletedAt: null,
 };
 
+/** What the URL says when nobody has paged: page 1, ten rows to a page. */
+const FIRST_PAGE: PaginationState = { pageIndex: 0, pageSize: PAGE_SIZE };
+
+/**
+ * **`rowCount` defaults to `undefined`, which renders no footer** — the same
+ * condition the real table holds it back by while the first page is in flight.
+ * Every assertion in this file predates pagination, so leaving the footer out
+ * of those renders is what makes registering `rowPaginationFeature` provably a
+ * refactor here, the same way the 2026-11-16 move to TanStack was. A test that
+ * wants the footer passes a `rowCount`.
+ */
 function renderTable(props: {
   users: UserRow[] | undefined;
   isPending: boolean;
+  pagination?: PaginationState;
+  rowCount?: number;
 }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  const onPaginationChange = vi.fn<OnChangeFn<PaginationState>>();
 
   render(
     <QueryClientProvider client={queryClient}>
-      <UsersTable {...props} />
+      <UsersTable
+        users={props.users}
+        isPending={props.isPending}
+        pagination={props.pagination ?? FIRST_PAGE}
+        onPaginationChange={onPaginationChange}
+        rowCount={props.rowCount}
+      />
     </QueryClientProvider>,
   );
+
+  return { onPaginationChange };
 }
 
 // getAllByRole returns HTMLElement[], and noUncheckedIndexedAccess makes every
@@ -170,5 +198,35 @@ describe("UsersTable — what one row says", () => {
     expect(
       within(row).queryByRole("button", { name: "Delete The Admin" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+// The roster's footer, which arrived with pagination on 2026-11-21. One test
+// rather than the ticket table's two, because this is the half `tsc` cannot
+// reach: registering `rowPaginationFeature` in `userTableFeatures` *is* gated —
+// `TablePagination` asks for a table that has the pagination APIs, so
+// forgetting it fails the build — while `onPaginationChange` and `rowCount`
+// being passed to `useTable` are not. Without them the roster's buttons would
+// render, do nothing, and no other test here would notice.
+describe("UsersTable — the pagination footer", () => {
+  it("asks for the next page when Next is clicked", () => {
+    const { onPaginationChange } = renderTable({
+      users: [AGENT],
+      isPending: false,
+      rowCount: 25,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+
+    expect(onPaginationChange).toHaveBeenCalledTimes(1);
+    const [call] = onPaginationChange.mock.calls;
+    if (!call) throw new Error("onPaginationChange was never called");
+
+    // The library's own resolver for "either the next value or a function of
+    // the previous one" — see the matching note in TicketsTable.test.tsx.
+    expect(functionalUpdate(call[0], FIRST_PAGE)).toEqual({
+      pageIndex: 1,
+      pageSize: PAGE_SIZE,
+    });
   });
 });

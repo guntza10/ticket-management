@@ -36,8 +36,10 @@ const TICKET: TicketRow = {
 // The page reads `data` and nothing else, so filling in the rest of an
 // AxiosResponse would be noise. The cast states that rather than hiding it
 // behind a fake response object nobody reads.
-function respondWith(tickets: TicketRow[]) {
-  vi.mocked(api.get).mockResolvedValue({ data: { tickets } } as AxiosResponse);
+function respondWith(tickets: TicketRow[], total = tickets.length) {
+  vi.mocked(api.get).mockResolvedValue({
+    data: { tickets, total },
+  } as AxiosResponse);
 }
 
 function renderTicketsPage(initialUrl = "/tickets") {
@@ -104,7 +106,7 @@ describe("TicketsPage", () => {
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       "/api/tickets",
       expect.objectContaining({
-        params: { sortBy: "subject", sortOrder: "asc" },
+        params: { sortBy: "subject", sortOrder: "asc", page: 1 },
       }),
     );
   });
@@ -121,7 +123,7 @@ describe("TicketsPage", () => {
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       "/api/tickets",
       expect.objectContaining({
-        params: { sortBy: "createdAt", sortOrder: "desc" },
+        params: { sortBy: "createdAt", sortOrder: "desc", page: 1 },
       }),
     );
   });
@@ -142,7 +144,7 @@ describe("TicketsPage", () => {
       expect(vi.mocked(api.get)).toHaveBeenCalledWith(
         "/api/tickets",
         expect.objectContaining({
-          params: { sortBy: "subject", sortOrder: "asc" },
+          params: { sortBy: "subject", sortOrder: "asc", page: 1 },
         }),
       );
     });
@@ -166,6 +168,7 @@ describe("TicketsPage", () => {
           status: "open",
           category: "refund_request",
           search: "csv",
+          page: 1,
         },
       }),
     );
@@ -192,7 +195,12 @@ describe("TicketsPage", () => {
       expect(vi.mocked(api.get)).toHaveBeenCalledWith(
         "/api/tickets",
         expect.objectContaining({
-          params: { sortBy: "createdAt", sortOrder: "desc", search: "csv" },
+          params: {
+            sortBy: "createdAt",
+            sortOrder: "desc",
+            search: "csv",
+            page: 1,
+          },
         }),
       );
     });

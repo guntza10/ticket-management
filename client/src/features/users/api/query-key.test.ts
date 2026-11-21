@@ -17,13 +17,28 @@ import { userKeys } from "./query-key";
 // Asserted through a real QueryClient rather than by comparing array prefixes by
 // hand, because the rule under test is React Query's matching, not ours. A
 // hand-rolled `startsWith` check would pass while the library disagreed.
+//
+// Two pages since 2026-11-21, because the key now carries one: a created user
+// lands on the last page of an ascending roster, so an invalidation that only
+// reached the page on screen would leave every other page holding rows from
+// before — and the admin would see the new account appear or not depending on
+// which page they happened to be on.
 describe("userKeys", () => {
-  it("puts the roster underneath the key the mutations invalidate", async () => {
+  it("puts every page of the roster underneath the key the mutations invalidate", async () => {
+    const firstPage = { page: 1 };
+    const secondPage = { page: 2 };
+
     const queryClient = new QueryClient();
-    queryClient.setQueryData(userKeys.list(), []);
+    queryClient.setQueryData(userKeys.list(firstPage), []);
+    queryClient.setQueryData(userKeys.list(secondPage), []);
 
     await queryClient.invalidateQueries({ queryKey: userKeys.all() });
 
-    expect(queryClient.getQueryState(userKeys.list())?.isInvalidated).toBe(true);
+    expect(
+      queryClient.getQueryState(userKeys.list(firstPage))?.isInvalidated,
+    ).toBe(true);
+    expect(
+      queryClient.getQueryState(userKeys.list(secondPage))?.isInvalidated,
+    ).toBe(true);
   });
 });

@@ -33,6 +33,7 @@ describe("useTicketListQuery", () => {
     const { result } = renderTicketListQuery();
 
     expect(result.current.listQuery).toEqual({
+      page: 1,
       sortBy: "createdAt",
       sortOrder: "desc",
     });
@@ -43,6 +44,7 @@ describe("useTicketListQuery", () => {
     const { result } = renderTicketListQuery("/tickets?sortBy=subject&sortOrder=asc");
 
     expect(result.current.listQuery).toEqual({
+      page: 1,
       sortBy: "subject",
       sortOrder: "asc",
     });
@@ -58,6 +60,7 @@ describe("useTicketListQuery", () => {
     const { result } = renderTicketListQuery("/tickets?sortBy=subject");
 
     expect(result.current.listQuery).toEqual({
+      page: 1,
       sortBy: "subject",
       sortOrder: "desc",
     });
@@ -71,6 +74,7 @@ describe("useTicketListQuery", () => {
     const { result } = renderTicketListQuery("/tickets?sortBy=bodyHtml");
 
     expect(result.current.listQuery).toEqual({
+      page: 1,
       sortBy: "createdAt",
       sortOrder: "desc",
     });
@@ -86,6 +90,7 @@ describe("useTicketListQuery", () => {
     );
 
     expect(result.current.listQuery).toEqual({
+      page: 1,
       sortBy: "createdAt",
       sortOrder: "desc",
     });
@@ -100,6 +105,7 @@ describe("useTicketListQuery", () => {
 
     expect(result.current.location.search).toBe("?sortBy=subject&sortOrder=asc");
     expect(result.current.listQuery).toEqual({
+      page: 1,
       sortBy: "subject",
       sortOrder: "asc",
     });
@@ -153,6 +159,7 @@ describe("useTicketListQuery", () => {
     );
 
     expect(result.current.listQuery).toEqual({
+      page: 1,
       sortBy: "createdAt",
       sortOrder: "desc",
       search: "csv",
@@ -189,6 +196,7 @@ describe("useTicketListQuery", () => {
       const { result } = renderTicketListQuery(url);
 
       expect(result.current.listQuery).toEqual({
+        page: 1,
         sortBy: "createdAt",
         sortOrder: "desc",
         ...expected,
@@ -204,6 +212,7 @@ describe("useTicketListQuery", () => {
     const { result } = renderTicketListQuery("/tickets?search=");
 
     expect(result.current.listQuery).toEqual({
+      page: 1,
       sortBy: "createdAt",
       sortOrder: "desc",
     });
@@ -219,6 +228,7 @@ describe("useTicketListQuery", () => {
       const { result } = renderTicketListQuery(url);
 
       expect(result.current.listQuery).toEqual({
+        page: 1,
         sortBy: "createdAt",
         sortOrder: "desc",
       });
@@ -260,6 +270,7 @@ describe("useTicketListQuery", () => {
     });
 
     expect(result.current.listQuery).toEqual({
+      page: 1,
       sortBy: "subject",
       sortOrder: "asc",
       search: "csv",
@@ -278,6 +289,7 @@ describe("useTicketListQuery", () => {
     });
 
     expect(result.current.listQuery).toEqual({
+      page: 1,
       sortBy: "subject",
       sortOrder: "desc",
       status: "open",
