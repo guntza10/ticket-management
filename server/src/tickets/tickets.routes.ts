@@ -6,6 +6,7 @@ import {
   ticketListQuerySchema,
   type TicketSortField,
 } from "../../../core/schemas/tickets.ts";
+import { PAGE_SIZE } from "../../../core/schemas/pagination.ts";
 
 // Mounted at /api/tickets by index.ts, so the one path below is relative to
 // that. A second router file in src/tickets/ rather than a second route inside
@@ -186,21 +187,56 @@ router.get("/", async (req, res) => {
     res.status(400).json({ error: "invalid_query" });
     return;
   }
-  const { sortBy, sortOrder, search, status, category } = parsed.data;
+  const { sortBy, sortOrder, search, status, category, page } = parsed.data;
 
-  const tickets = await prisma.ticket.findMany({
-    where: {
-      // Written as plain properties rather than conditional spreads: Prisma
-      // reads `undefined` as "this filter was not asked for", which is exactly
-      // what an absent query parameter means.
-      status,
-      category,
-      OR: search ? searchFilter(search) : undefined,
-    },
-    select: TICKET_LIST_FIELDS,
-    orderBy: [ORDER_BY[sortBy](sortOrder), { id: "desc" }],
-  });
-  res.json({ tickets });
+  // Named rather than written inline, because **the count has to be taken over
+  // the same filters as the rows**. Two copies of this object is the one way
+  // this endpoint can now lie: the page would hold the rows that match a search
+  // while the footer counted every ticket in the table, so "Showing 1-10 of
+  // 42" would sit under three rows. One value, read twice, cannot drift.
+  const where: Prisma.TicketWhereInput = {
+    // Written as plain properties rather than conditional spreads: Prisma
+    // reads `undefined` as "this filter was not asked for", which is exactly
+    // what an absent query parameter means.
+    status,
+    category,
+    OR: search ? searchFilter(search) : undefined,
+  };
+
+  // Two queries, in parallel, because neither needs the other's answer. They
+  // are **not** in a transaction: a ticket arriving between them could leave
+  // the count one higher than the page proves, which at worst draws a page
+  // number nobody can reach until the next refetch. A transaction would buy
+  // consistency for one render and cost a connection held across two round
+  // trips on every page load of a list anyone may be reading.
+  const [tickets, total] = await Promise.all([
+    prisma.ticket.findMany({
+      where,
+      select: TICKET_LIST_FIELDS,
+      orderBy: [ORDER_BY[sortBy](sortOrder), { id: "desc" }],
+      // `skip` is where the second sort key stops being a nicety. Paging is a
+      // promise that row 11 is the row after row 10, and Postgres only keeps
+      // that promise if the order is total: with `status` as the only key, two
+      // tickets sharing a status may swap between the request for page 1 and
+      // the request for page 2, so one of them is on both pages and the other
+      // on neither. `id desc` is already on every answer for that reason.
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+    }),
+    prisma.ticket.count({ where }),
+  ]);
+
+  // `total` is the count of rows matching the filters, not the number on this
+  // page — the client divides it by the page size it already shares with this
+  // file. Neither `page` nor `pageSize` is echoed back: the caller sent the
+  // first and the second is a constant both sides import, so repeating them
+  // here would be two more fields that can disagree with the request.
+  //
+  // A page past the end answers `{ tickets: [], total: 42 }` rather than a 404
+  // or a clamp. `?page=99` is reachable only by hand — the client disables the
+  // buttons at the last page — and an empty list with an honest total is what
+  // lets the UI say so instead of pretending the request was wrong.
+  res.json({ tickets, total });
 });
 
 export default router;

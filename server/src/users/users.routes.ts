@@ -6,7 +6,9 @@ import { requireAdmin } from "../require-admin.ts";
 import {
   createUserSchema,
   updateUserSchema,
+  userListQuerySchema,
 } from "../../../core/schemas/users.ts";
+import { PAGE_SIZE } from "../../../core/schemas/pagination.ts";
 import {
   createUserWithPassword,
   PUBLIC_USER_FIELDS,
@@ -33,12 +35,40 @@ router.use(requireAuth, requireAdmin);
 // No try/catch: Express 5 forwards a rejected promise to the error handler in
 // index.ts on its own. Catch only when an error should change the response —
 // as POST below does for a duplicate address.
-router.get("/", async (_req, res) => {
-  const users = await prisma.user.findMany({
-    select: PUBLIC_USER_FIELDS,
-    orderBy: { createdAt: "asc" },
-  });
-  res.json({ users });
+router.get("/", async (req, res) => {
+  // The roster's whole query is a page number — no sort, no filters, because
+  // nothing on /users offers either. It is still parsed rather than read off
+  // `req.query` by hand, and still answers 400 outside its range, so `?page=0`
+  // is refused here exactly as it is on the ticket list. One shape of answer
+  // for one shape of mistake, across both lists.
+  const parsed = userListQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_query" });
+    return;
+  }
+  const { page } = parsed.data;
+
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({
+      select: PUBLIC_USER_FIELDS,
+      // `id` is a second sort key now, and it is **not** cosmetic: paging only
+      // means anything over a total order. `createdAt` alone is not one here —
+      // `prisma/seed.ts` writes the two seeded accounts in a loop, and two rows
+      // written in the same millisecond have no order Postgres promises, so one
+      // of them could appear on page 1 and page 2 while the other appeared on
+      // neither. The ticket list carries `id desc` on every answer for the same
+      // reason. Ascending here, to match the column it is breaking ties for.
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+    }),
+    // No `where`, because this list has no filters — and no soft-delete
+    // condition either, deliberately: the roster returns deleted rows muted and
+    // badged rather than hiding them (see client/CLAUDE.md), so a count that
+    // skipped them would promise fewer rows than the pages hold.
+    prisma.user.count(),
+  ]);
+  res.json({ users, total });
 });
 
 // Public sign-up is disabled, so Better Auth's signUpEmail is unavailable and

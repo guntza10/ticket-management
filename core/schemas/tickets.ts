@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageQuerySchema } from "./pagination.ts";
 
 // What GET /api/tickets may be sorted by. Named once as a value, because zod
 // needs a real array to check against at runtime, and once as a type, because
@@ -92,7 +93,16 @@ export const SEARCH_MAX_LENGTH = 998;
 // client, because URLSearchParams.get() returns null for a parameter that is
 // not there. `.optional()` has the same gap. See use-ticket-list-query.ts for
 // the one line per parameter that bridges it.
-export const ticketListQuerySchema = z.object({
+//
+// **`page` comes from `pageQuerySchema` by `.extend`, not from a line here**,
+// because `?page=` means the same thing on this list and on the roster — see
+// `./pagination.ts`. Note what that pairs it with: a page number is the one
+// parameter whose correct value depends on the others. Page 3 of a search for
+// "refund" is not page 3 of the unfiltered list, so every control that changes
+// a filter or the sort has to send the caller back to page 1. The server cannot
+// do that for them — it is handed one query and answers it — so the rule lives
+// in `use-ticket-list-query.ts`, where the URL is written.
+export const ticketListQuerySchema = pageQuerySchema.extend({
   sortBy: z.enum(TICKET_SORT_FIELDS).default("createdAt"),
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
   // `?search=` is "not filtering", not a bad value, so it cannot answer 400 —

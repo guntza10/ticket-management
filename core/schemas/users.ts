@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageQuerySchema } from "./pagination.ts";
 
 // The minimum, and the sentence that reports it, named once. createUserSchema
 // states the rule with .min(); updateUserSchema cannot (see below) and restates
@@ -88,3 +89,21 @@ export const updateUserSchema = createUserSchema.extend({
 });
 
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+
+// The whole of what GET /api/users may be asked for, which today is a page
+// number and nothing else — `server/src/users/users.routes.ts` parses
+// `req.query` with it and `client/src/features/users/hooks/use-user-list-query.ts`
+// parses the URL with it, which is the same pair of readers that earns anything
+// its place in core/.
+//
+// **It is an alias for `pageQuerySchema` rather than a use of it, and that is
+// the point of the name.** The roster takes no sort and no filters — the server
+// decides its order and there is no toolbar on /users — so a reader of the
+// route would otherwise see `pageQuerySchema.safeParse(req.query)` and have to
+// work out whether that is the whole query or just the page half of it. The
+// day the roster grows a search this becomes
+// `pageQuerySchema.extend({ search: … })`, the way the ticket list already is,
+// and no caller changes.
+export const userListQuerySchema = pageQuerySchema;
+
+export type UserListQuery = z.infer<typeof userListQuerySchema>;
