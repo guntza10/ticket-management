@@ -69,7 +69,7 @@ Current specs:
   admin, the exact seven-key set on every row, that no row carries `body` or
   `bodyHtml`, and that a newer ticket is listed before an older one. The field-set loop
   is the only thing in the repo stopping someone widening the route's `select` into the
-  webhook's `PUBLIC_TICKET_FIELDS`
+  webhook's `WEBHOOK_ANSWER_FIELDS`
 - `tickets-list.spec.ts` — `/tickets` in a browser: an **agent** (not an admin) follows
   the nav link to the list and finds a ticket that arrived by email, with its sender
   address and the status rendered as **"Open"** rather than the raw enum `open`; the

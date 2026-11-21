@@ -23,6 +23,7 @@ export const ALLOWED_TICKET_FIELDS = [
   "assignedToId",
   "body",
   "bodyHtml",
+  "bodyHtmlSanitized",
   "category",
   "createdAt",
   "id",
@@ -115,6 +116,7 @@ export type TicketResponse = {
   subject: string;
   body: string;
   bodyHtml: string | null;
+  bodyHtmlSanitized: string | null;
   status: "open" | "resolved" | "closed";
   category:
     | "general_question"
