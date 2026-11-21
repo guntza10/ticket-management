@@ -545,6 +545,29 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     **It knows nothing about the URL and nothing about either feature** — which is what
     lets `TablePagination.test.tsx` build a real table from `rowPaginationFeature` and
     assert the footer's own branches, while each table's test keeps the wiring claim.
+    **shadcn ships a `pagination` component and this is not it, which is the first
+    question a reader asks** (2026-11-21). `npx shadcn add pagination` installs
+    `Pagination` / `PaginationLink` / `PaginationPrevious` / `PaginationEllipsis`, and
+    every example in its docs is **link-based**: an `href` per page with
+    `PaginationLink isActive` marking the current one. That is built for pages where the
+    page number *is* the route, not for a table.
+    What we have instead is the shape the ecosystem actually uses with TanStack Table,
+    checked rather than assumed: **TanStack's own pagination guide shows the same four
+    buttons in every framework** — `firstPage()` / `previousPage()` / `nextPage()` /
+    `lastPage()` disabled by `getCanPreviousPage()` / `getCanNextPage()` /
+    `getCanLastPage()` — and **shadcn's own data-table docs do not use its `Pagination`
+    component either**, they wire `Button` to `table.previousPage()`. The reference
+    project does the same and has no `pagination.tsx` installed at all. The reason is
+    structural: the instance owns `pageIndex` and `pageCount`, and numbered links need a
+    page-window algorithm (`1 … 4 5 6 … 10`) that no library here provides —
+    `PaginationEllipsis` is markup for the gap, not the logic that decides where it goes.
+    **What the link version would genuinely buy**, and the only honest argument for it:
+    our page number lives in the URL, so real anchors would give ctrl-click,
+    middle-click and "copy link" — which buttons cannot. **Trigger: wanting numbered
+    pages, or wanting a page openable in a new tab.** Taking it means writing the
+    page-window logic, teaching this component the URL (it takes a table and a
+    `PaginationState` today), and accepting a deliberate step outside the convention
+    both libraries document.
 - `src/features/<domain>/api/` — one file per endpoint, each exporting the hook the
   components call: `get-users.ts` (`useUsers(query)` + `UserRow` + `UserListResponse` —
   it takes the page query and returns `{ users, total }` since 2026-11-21, where it took
