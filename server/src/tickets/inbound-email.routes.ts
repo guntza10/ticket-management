@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db.ts";
+import { sanitizeBodyHtml } from "./sanitize-body-html.ts";
 import { requireWebhookSecret } from "../require-webhook-secret.ts";
 
 // Mounted at /api/webhooks/inbound-email by index.ts, so the one path below is
@@ -15,11 +16,24 @@ router.use(requireWebhookSecret);
 // what it is rather than for the model, because `updatedAt` and
 // `subjectNormalized` are deliberately outside it — which is also what gives
 // the specs' key-set assertion teeth.
-export const PUBLIC_TICKET_FIELDS = {
+//
+// **It was `PUBLIC_TICKET_FIELDS` until 2026-11-21**, and the rename is about
+// one of its members: it selects the raw `bodyHtml`, which the sanitisation
+// work says may be rendered nowhere, and "public" is an invitation to reuse a
+// constant for an answer it was not written for. This one describes *the
+// webhook's* answer and nothing else. `server/CLAUDE.md` still schedules both
+// ticket allow-lists to move into `src/tickets/ticket-fields.ts` the day
+// `GET /api/tickets/:id` wants the full shape.
+//
+// The raw column is in here because the caller already holds those bytes — it
+// posted them a moment ago — and because a spec needs to read it back to prove
+// the original was not sanitised in place. No other answer carries it.
+export const WEBHOOK_ANSWER_FIELDS = {
   id: true,
   subject: true,
   body: true,
   bodyHtml: true,
+  bodyHtmlSanitized: true,
   status: true,
   category: true,
   senderName: true,
@@ -43,6 +57,48 @@ export const PUBLIC_TICKET_FIELDS = {
 // not reach `subject`, which a ticket table will render.
 const EMAIL_HEADER_MAX_LENGTH = 998;
 
+/**
+ * The longest HTML part this route will accept, and **it exists for CPU rather
+ * than for storage.**
+ *
+ * `sanitizeBodyHtml` parses and re-serialises this string synchronously, on the
+ * one thread the whole server shares, inside the request path — so the time it
+ * takes is time every other caller waits. `body` next door is uncapped on
+ * purpose (capping it would 400 a real support email) and that reasoning does
+ * **not** carry here, because nothing parses `body`.
+ *
+ * **Measured 2026-11-21, and the shape of the cost is the point: it tracks
+ * nesting depth, not length.**
+ *
+ *   | input                        | size      | sanitize() |
+ *   | nested <div> x2000           |  9.8 KiB  |     96 ms  |
+ *   | nested <div> x4000           | 19.5 KiB  | RangeError at 463 ms |
+ *   | nested <div> x8000           | 39.1 KiB  | RangeError at 1841 ms |
+ *   | 6000 flat <p> paragraphs     |  375 KiB  |     66 ms  |
+ *
+ * So this number is a **ceiling on the worst case, not a fix for it**: 64 KiB
+ * of ordinary mail sanitises in a few milliseconds, while 64 KiB of pathology
+ * costs a second or two and then throws `RangeError` out of parse5, which
+ * Express answers as 500. A cap low enough to make the pathological case fast
+ * (~8 KiB) would refuse ordinary HTML mail, and a cap generous enough for
+ * ordinary mail cannot make it fast. Found by `security-reviewer`, which
+ * measured the same shape through the route and recommended a length cap; the
+ * measurement above is why the cap alone is not called a fix.
+ *
+ * **What would actually bound it**, in the order they are worth doing: the rate
+ * limit the root CLAUDE.md's Known gaps already owes this route (it bounds
+ * repetition, which is what turns one slow request into an outage), and moving
+ * the sanitiser off the request path. A depth check before sanitising was
+ * considered and refused — it means hand-writing a parser's worth of
+ * `<`-counting over hostile input, which is new security-relevant code to get
+ * wrong for a threat model that has no deployment in it.
+ *
+ * 64 KiB rather than a rounder number: `express.json()` already refuses a body
+ * over 100 KiB, so this leaves room for the rest of the payload while being
+ * far above any support email a person writes by hand.
+ */
+const BODY_HTML_MAX_LENGTH = 64 * 1024;
+
 const inboundEmailSchema = z.object({
   from: z.email("Invalid email address").toLowerCase(),
   fromName: z
@@ -56,7 +112,10 @@ const inboundEmailSchema = z.object({
     .min(1, "Subject is required")
     .max(EMAIL_HEADER_MAX_LENGTH, "Subject is too long"),
   body: z.string().min(1, "Body is required"),
-  bodyHtml: z.string().optional(),
+  bodyHtml: z
+    .string()
+    .max(BODY_HTML_MAX_LENGTH, "HTML body is too long")
+    .optional(),
 });
 
 // What a mail client puts in front of a subject when a person replies or
@@ -113,7 +172,7 @@ router.post("/", async (req, res) => {
         // wildcard. See schema.prisma.
         subjectNormalized,
       },
-      select: PUBLIC_TICKET_FIELDS,
+      select: WEBHOOK_ANSWER_FIELDS,
     });
 
     if (existingTicket) {
@@ -124,16 +183,27 @@ router.post("/", async (req, res) => {
 
   // The subject is stored stripped, so a reply's "Re: " never becomes part of
   // the ticket's name.
+  const bodyHtml = email.bodyHtml ?? null;
   const ticket = await prisma.ticket.create({
     data: {
       subject: strippedSubject,
       subjectNormalized,
       body: email.body,
-      bodyHtml: email.bodyHtml ?? null,
+      // Both columns, from one value rather than from `email.bodyHtml` twice:
+      // the raw HTML as evidence and the sanitised copy as the only one
+      // anything else may read. Written this way so **the derived column is
+      // null exactly when the raw one is** — the first version tested
+      // `email.bodyHtml ?? null` for one and truthiness for the other, which
+      // disagreed on `""` (a legal input, since the field is only
+      // `.optional()`) and stored `""` beside `null`. Any consumer's
+      // `if (bodyHtmlSanitized === null)` branch assumes they agree.
+      // See sanitize-body-html.ts for why this runs here rather than at render.
+      bodyHtml,
+      bodyHtmlSanitized: bodyHtml === null ? null : sanitizeBodyHtml(bodyHtml),
       senderName: email.fromName,
       senderEmail: email.from,
     },
-    select: PUBLIC_TICKET_FIELDS,
+    select: WEBHOOK_ANSWER_FIELDS,
   });
 
   res.status(201).json({ ticket });

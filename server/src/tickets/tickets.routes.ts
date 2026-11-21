@@ -28,7 +28,7 @@ const router = Router();
 // accepting an autocomplete suggestion.
 router.use(requireAuth);
 
-// The list's own allow-list, narrower than PUBLIC_TICKET_FIELDS in
+// The list's own allow-list, narrower than WEBHOOK_ANSWER_FIELDS in
 // inbound-email.routes.ts, and the narrowing is the point rather than an
 // oversight. Two things decide what belongs here:
 //
@@ -53,7 +53,7 @@ router.use(requireAuth);
 // all four /api/users verbs answer the same shape. A list and a detail answer
 // different shapes on purpose, so one constant would be the bug. Each lives in
 // the file that is its only reader. Move both into src/tickets/ticket-fields.ts
-// (and rename PUBLIC_TICKET_FIELDS in the same go) the day GET /api/tickets/:id
+// the day GET /api/tickets/:id
 // wants the full shape — that is a genuine second reader across files, and it
 // is the trigger, not a line count.
 //

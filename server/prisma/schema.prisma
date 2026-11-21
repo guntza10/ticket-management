@@ -42,7 +42,39 @@ model Ticket {
   id       Int     @id @default(autoincrement())
   subject  String
   body     String
+
+  // What the customer's mail actually contained, kept exactly as it arrived.
+  // It is unsanitised by definition: a mail provider posts whatever the sender
+  // wrote, `<script>` included.
+  //
+  // **It may not be rendered, and it may not be fed to a model.** The one
+  // function that reads it in order to derive something is
+  // `src/tickets/sanitize-body-html.ts`; the webhook's answer also echoes it
+  // back to the caller that just sent it, which adds no reach — that caller
+  // already holds the bytes — and is what lets a spec prove this column was
+  // not quietly sanitised in place. Every other consumer reads the column
+  // below.
   bodyHtml String?
+
+  // `bodyHtml` with everything executable removed, written on create by the one
+  // function above. Nullable for the same reason `bodyHtml` is: an email may
+  // carry no HTML part at all.
+  //
+  // **Two columns rather than sanitising in place**, which is the decision
+  // worth knowing: the raw one is evidence of what was sent and the only thing
+  // a stricter policy could be re-run against, while the derived one is what a
+  // detail page, a digest or an AI prompt reads. Sanitising on render instead —
+  // what the reference project does — leaves every future consumer responsible
+  // for remembering.
+  //
+  // Rows written before 2026-11-21 hold `null` here while their `bodyHtml` is
+  // populated; the dev database is disposable (`db:reseed:tickets`) and the
+  // test database truncates per run, so no backfill was written. A real
+  // deployment needs one — and **a consumer must never write the natural
+  // `bodyHtmlSanitized ?? bodyHtml` fallback**, which would render raw,
+  // unsanitised HTML for exactly those rows. Flagged by `security-reviewer`
+  // on 2026-11-21 as the sharp edge of skipping the backfill.
+  bodyHtmlSanitized String?
 
   status TicketStatus @default(open)
 
