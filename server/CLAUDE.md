@@ -17,6 +17,13 @@ Express 5 + TypeScript API on Node 24. Shared, monorepo-level rules live in
 - `npm run db:reseed:tickets --workspace server` — sample tickets for the **dev** DB
   only. `reseed`, not `seed`: unlike `prisma/seed.ts` it **deletes every ticket** first,
   so re-running gives the same six rows instead of a growing pile.
+- `npm run db:reseed:tickets:paged --workspace server` — the same thing with
+  `TICKET_SEED_COUNT=100`, which is what makes `/tickets` have a second page to click
+  through. Six rows do not fill one page, so the plain command above leaves the
+  pagination footer with nothing to show. Any other count still goes through the
+  variable by hand (`TICKET_SEED_COUNT=40 npm run db:reseed:tickets …`); the script
+  exists because that variable is set nowhere in the repo and was therefore
+  impossible to find without reading `prisma/seed-tickets.ts`.
 - Test-DB variants: `start:test`, `db:migrate:test`, `db:seed:test`, `db:truncate:test`,
   `db:reset:test`
 
@@ -447,11 +454,12 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
   reader across files is the trigger, not a line count.
 - **`?sortBy=` and `?sortOrder=` are the app's first query parameters** (2026-11-13),
   joined by `?search=`, `?status=` and `?category=` on 2026-11-19 — see
-  **Tickets (filtering)** below. Pagination is the one thing a caller still cannot ask
-  for. The order is still the server's: the client names a column and a
-  direction, never an arrangement of rows. Two places deciding one order is how they come
-  to disagree, and the server is the one that can still be right once this list is
-  paginated — a client sorting what it was sent can only sort the page it can see.
+  **Tickets (filtering)** below — and by `?page=` on 2026-11-21, see
+  **Pagination (both lists)**. The order is still the server's: the client names a column
+  and a direction, never an arrangement of rows. Two places deciding one order is how
+  they come to disagree, and **since the list is paginated the argument is no longer
+  hypothetical**: a client sorting what it was sent would be sorting ten rows out of
+  forty and calling the result sorted.
   - **The allow-list lives in `core/schemas/tickets.ts`, and what both workspaces share
     is the schema, not the array.** `ticketListQuerySchema` is exported and has a reader
     on each side — the server `safeParse`s `req.query` with it, the client parses the
@@ -563,6 +571,57 @@ different question, so OR-ing them would widen rather than narrow.
   lands with pagination would do nothing for the search. Trigram (`pg_trgm`) is the
   answer the day the search is measurably slow, and the trigger is still a measurement.
 
+## Pagination (both lists)
+
+`?page=` on `GET /api/tickets` and `GET /api/users` (2026-11-21), ten rows a page,
+answering `{ rows…, total }`. Both parse it through `pageQuerySchema` in
+`core/schemas/pagination.ts`, so a bad page is `400 invalid_query` on either list rather
+than a silent page 1.
+
+- **`PAGE_SIZE` is a shared const, not `?pageSize=`.** Four readers — both routes slice
+  with it, the client's footer turns a page number into a row range, and the hooks build
+  TanStack's `pageSize` from it. A caller cannot ask for 50 rows, which is deliberate:
+  an endpoint that answers 100 rows to anyone asking is most of what pagination was added
+  to stop, and no control offers a choice. **Trigger for making it a parameter: a
+  page-size control in a toolbar**, which is the first thing that would read it.
+- **`?page=` is uncapped at the top and that is not an oversight.** zod 4's `.int()` is a
+  *safe*-integer check, so `1e308` and `Infinity` are already refused — which is what
+  stops `skip` from ever being `NaN`. And a cap would buy no plan: measured 2026-11-21,
+  `OFFSET 0` and `OFFSET 2000000000` produce the same `Seq Scan` + `Sort` at the same
+  cost, because Postgres cannot skip rows it has not produced. What scales is the sort
+  bound, so **deep paging is the cost and an index is its answer** — the trigger for that
+  lives on the Ticket model in `schema.prisma`. The reasoning is written out in
+  `core/schemas/pagination.ts`.
+- **The count is taken over the same `where` as the rows**, and on the ticket list that
+  is enforced by construction: one named `where` object, read twice, with a comment
+  saying what two copies would have produced — "Showing 1–10 of 42" above three rows.
+  `Promise.all` rather than a transaction: a ticket arriving between the two queries can
+  leave the count one ahead of the page, which at worst draws a page number nobody can
+  reach until the next refetch, and a transaction would hold a connection across two
+  round trips on every page load.
+- **The roster is the half with no `where` at all**, and the asymmetry is worth knowing
+  before somebody adds one. `findMany` and `count()` both read every row, soft-deleted
+  accounts included, because the roster shows deleted rows muted rather than hiding them
+  — so the pages and the count describe the same set. Add `deletedAt: null` to the
+  `findMany` later and forgetting the `count` is **silent**: the footer promises pages
+  that hold no rows, and the last page becomes unreachable by clicking Next. Raised by
+  `security-reviewer` on 2026-11-21 as the one place the two routes are not equally
+  guarded against the same mistake. `users-api-pagination.spec.ts` has the spec that
+  notices it, and it had to page **without consulting `total`** to be able to see the
+  fault at all.
+- **A second sort key is not optional on a paginated list.** Paging promises that row 11
+  is the row after row 10, which only holds over a total order: the ticket list already
+  carried `id desc` on every answer, and `GET /api/users` gained `id asc` beside
+  `createdAt asc` here, because `prisma/seed.ts` writes two accounts in one millisecond
+  and two rows sharing a timestamp have no order Postgres promises — one would appear on
+  two pages and the other on none.
+- **A page past the end answers `[]` with the real total**, not a 404 and not a clamp to
+  the last page. It is reachable by hand and by deleting the only row on the last page, and
+  an honest empty answer is what lets the footer say so while still offering Previous.
+- **Neither `page` nor `pageSize` is echoed back.** The caller sent the first and the
+  second is a constant both sides import, so repeating them would be two more fields that
+  could disagree with the request.
+
 ## Error handling
 
 - **Every error answers `{ error: "<snake_case_code>" }`.** In use: `unauthenticated`
@@ -571,8 +630,11 @@ different question, so OR-ing them would widen rather than narrow.
   `internal_error` (500).
   `invalid_body` and `invalid_query` are both 400 and both come from a failed
   `safeParse`; they differ in *where* the caller has to look — a JSON body or the query
-  string. `GET /api/tickets` is the only route with the second one, because it is the
-  only route that reads `req.query` at all.
+  string. `GET /api/tickets` was the only route answering the second one until
+  2026-11-21; `GET /api/users` joined it with `?page=`, which is the first query
+  parameter the roster has ever taken. Both parse through the same
+  `pageQuerySchema`, which is why one shape of mistake has one shape of answer across
+  both lists.
   Two codes share 401 as well: `unauthenticated` means no session was presented,
   `invalid_webhook_secret` means no session was *looked for* — a client should be able to
   tell which door turned it away.

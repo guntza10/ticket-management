@@ -98,14 +98,29 @@ model Ticket {
   // No sort column has an index either, and since 2026-11-13 GET /api/tickets
   // can order by any of five — subject, senderName, status, category, createdAt
   // — plus id as a second key on every answer. Each is a sort over a seq scan,
-  // which is nothing at this size. The trigger is still pagination rather than
-  // the number of ORDER BY columns: an ordered key read with take/skip is where
-  // an index starts paying, and that is the same moment the list stops
-  // returning every row. When it arrives, createdAt is the one to index first
-  // (it is the default order, so it is on every page load); status and category
-  // hold three values each and would match most of the table anyway. Written
-  // here rather than in tickets.routes.ts because this is the file somebody
-  // adding an index will open.
+  // which is nothing at this size.
+  //
+  // **Pagination arrived on 2026-11-21 and no index came with it, which
+  // contradicts what this comment said for eight days.** It named pagination as
+  // the trigger — "an ordered key read with take/skip is where an index starts
+  // paying" — and that sentence is true about a large table and wrong about
+  // this one: a table of dozens of rows (or the hundred `TICKET_SEED_COUNT`
+  // writes) fits in a handful of 8KB pages, so the planner reads it
+  // sequentially and sorts in memory whether an index exists or not. An index
+  // nothing chooses still costs every insert from the webhook.
+  //
+  // So the trigger is back to what it is for every other column here: a
+  // **measured** slow query — EXPLAIN (ANALYZE) showing the seq scan or the
+  // sort dominating a page load at a real row count. createdAt is still the
+  // one to index first, since it is the default order and therefore on every
+  // page load; the honest form is [createdAt(sort: Desc), id(sort: Desc)],
+  // because that is the ORDER BY the route actually sends. status and category
+  // hold three values each and would match most of the table anyway.
+  //
+  // What an index will **not** help is the search: ILIKE '%term%' cannot use a
+  // btree at all, so that one needs pg_trgm + gin or nothing. Same rule, same
+  // trigger, different answer. Written here rather than in tickets.routes.ts
+  // because this is the file somebody adding an index will open.
   @@map("ticket")
 }
 

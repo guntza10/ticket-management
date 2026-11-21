@@ -193,7 +193,9 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   `UsersPage` until 2026-11-02, so a new column meant editing two files with nothing
   saying when one was forgotten; since 2026-11-16 all three read
   `table.getAllColumns()`, so they cannot disagree at all. It
-  takes `users` and `isPending` as **props** rather than calling `useUsers()` itself:
+  takes `users`, `isPending` and, since 2026-11-21, the three pagination props
+  (`pagination`, `onPaginationChange`, `rowCount`) as **props** rather than calling
+  `useUsers()` itself:
   the page shows `error` above the Card, so it has to call the hook anyway, and the
   props are what let the three bodies be reached from a test with no faked request.
   The delete button is also hidden on **admin** rows. That is the UI half of a rule the
@@ -304,10 +306,22 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     sort that also decides what `?status=` does is a worse name than a longer one.
     Where the person is looking is not a detail of how the page is drawn — in the URL it
     survives a refresh, the back button undoes it, and the view is shareable as a link.
-    A store does none of those. Pagination belongs here too; it is the one part still
-    missing.
-    Four details are load-bearing and none is obvious.
-    **Every parameter read out of the URL needs `?? undefined`** — five of them now.
+    A store does none of those.
+    **Pagination joined it on 2026-11-21 and the hook now owns the whole question** —
+    `page` is read and written like every other parameter, and the hook also hands back
+    `pagination` / `onPaginationChange` in TanStack's 0-based `pageIndex` spelling, so
+    that conversion happens here and in the footer's `+ 1` and nowhere else.
+    Two rules came with it, and they are the interesting half. **`setFilters` and
+    `onSortingChange` both force `page: 1`**, because page 3 of one question is not page
+    3 of another — written in the two setters rather than in a `useEffect` on the query,
+    which would also fire on the back button and make `?sortBy=status&page=3` an
+    unreachable URL. And **`onPaginationChange` drops `next.pageSize`**: nothing can
+    change it, so honouring it would write a size into the URL that the endpoint does
+    not read. `/users` got its own copy of the same shape in
+    `features/users/hooks/use-user-list-query.ts` — see the note there and in **Where a
+    new file goes** about why it is a copy rather than a shared hook.
+    Five details are load-bearing and none is obvious.
+    **Every parameter read out of the URL needs `?? undefined`** — six of them now.
     zod's `.default()` fires on `undefined` and never on `null`, `.optional()` has the
     same gap, and `searchParams.get()` answers `null` for a parameter that is not there,
     so without it a URL carrying only *some* of these fails the parse and reverts to the
@@ -357,6 +371,35 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     than 6 to one. Nothing was restructured. Kept here rather than deleted because the
     next person to read it should know the trigger has already fired once without biting;
     **pagination is the real test of it**, since a page number does go to the table.
+    **Pagination arrived on 2026-11-21, the trigger fired properly this time, and the
+    answer is still no — with the reasoning written down, because "no" twice in a row is
+    only honest if it says what changed.** `TicketsTable` now takes **7** props
+    (`tickets`, `isPending`, `sorting`, `onSortingChange`, `pagination`,
+    `onPaginationChange`, `rowCount`) and `TicketsPage` reads none of the last five; it
+    forwards them. `UsersTable` takes 5 the same way. Both Standards reviewers named it,
+    one as the predicted clump and one as the prediction coming true.
+    Three restructures were weighed:
+    **Bundling the five into one `query` prop** is the cheap one and was refused as
+    cosmetic: the page forwards exactly the same five values, in a bag. It answers the
+    *name* of the smell and nothing the smell is about.
+    **Passing the `table` instance** — what this bullet guessed in 2026-11-16 — is worse
+    than it sounded: `useTable` would move into `TicketsPage`, which would then have to
+    import `ticketColumns` and `ticketTableFeatures` out of the feature, so the page
+    would know how the table is built in order to stop knowing what it renders. The
+    column definitions and the instance belong in one place and that place is the
+    feature.
+    **The table calling `useTicketListQuery()` itself** is the one that actually removes
+    the threading, and it is the one to do: the hook is in the same feature, it reads the
+    URL rather than holding state, so two callers cannot disagree, and the page keeps its
+    own call for the request. What declined it is the price *today*: the table's tests
+    reach every one of those states through props — the sort, the page, the three bodies
+    — and they are green and each proven able to fail. Rewriting them around a
+    MemoryRouter and a URL, at the end of a change, buys the same behaviour and risks the
+    one thing the change has: proof.
+    **Trigger, and it is not renewable: the next prop either table gains** — row
+    selection and the detail page's row link are both on the way. At that point do the
+    third option as its own commit with no behaviour change, the way `UsersTable` moved
+    to TanStack Table on 2026-11-16, so the test rewrite is the only thing in the diff.
   - **Never park server data in a store.** That is a second cache beside the one
     TanStack Query already keeps, and then nothing says which of the two is right.
 - **Server errors from a mutation go through `setError`, not a second dialog.** A 409
@@ -446,6 +489,11 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     where everything else is settled. **Trigger: a second debounced control, or
     pagination arriving at this toolbar** — either makes the timing logic something two
     things share rather than one component's detail.
+    **Half that trigger has now been answered: pagination did not arrive at this
+    toolbar** (2026-11-21). The page number went into the footer under the table, not
+    into the filter bar, so nothing here gained a second debounced control and the
+    refusal stands unchanged. What remains of the trigger is the first half — a second
+    control that debounces.
   - **`TicketsFilters` owns the half-typed search term and nothing else** — the URL owns
     the filters. It scores on question 2 of **When to extract a unit** (a `draft`, a
     debounce timer, a sync back from the URL — all able to be wrong on their own) and
@@ -475,10 +523,32 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     back `undefined`. Spelled with underscores so a future status called `all` could not
     collide with it.
 - `src/components/` — components **two or more** features or pages use
-  (`NavBar`, `ProtectedRoute`, `ErrorDialog`, `PasswordInput`);
+  (`NavBar`, `ProtectedRoute`, `ErrorDialog`, `PasswordInput`, `TablePagination`);
   `src/components/ui/` — shadcn (generated)
+  - **`TablePagination` is the one abstraction the two lists share** (2026-11-21), and it
+    passes the test a shared `DataTable` fails: paging means the same thing on both
+    lists, both read the same `PAGE_SIZE`, and a change to how a page is announced — the
+    range, the labels, the disabled edges — is a change both should get. A column added
+    to the roster still says nothing about the ticket list, which is why the tables stay
+    apart and this does not.
+    **It takes `table` *and* `pagination`, and the second prop is the interesting half.**
+    Every *decision* comes off the instance (`getPageCount`, `getRowCount`,
+    `getCanNextPage`, `nextPage`), so there is one mechanism rather than two — which is
+    why the first version of this file, which took plain numbers and did the arithmetic
+    itself, was replaced. But `Table_RowPagination` carries the methods and not the
+    state, so reading `pageIndex` off the instance meant a hand-written fragment of v9's
+    atom graph in the prop type, for two numbers. Worse, `table.atoms.pagination.get()`
+    is documented as a non-subscribing snapshot for event handlers, which is the wrong
+    read in a render path; it worked only because the state is controlled from the URL.
+    A second prop says "this footer needs a page index and a page size" in one line, and
+    both callers already hold exactly that value.
+    **It knows nothing about the URL and nothing about either feature** — which is what
+    lets `TablePagination.test.tsx` build a real table from `rowPaginationFeature` and
+    assert the footer's own branches, while each table's test keeps the wiring claim.
 - `src/features/<domain>/api/` — one file per endpoint, each exporting the hook the
-  components call: `get-users.ts` (`useUsers` + the `UserRow` type the response has),
+  components call: `get-users.ts` (`useUsers(query)` + `UserRow` + `UserListResponse` —
+  it takes the page query and returns `{ users, total }` since 2026-11-21, where it took
+  no argument and returned the rows),
   `create-user.ts`, `update-user.ts`, `delete-user.ts`, and `query-key.ts` holding the
   `userKeys` factory all four name. `features/tickets/api/` holds `get-tickets.ts`
   (`useTickets` + `TicketRow`) and its own `query-key.ts` exporting `ticketKeys`; no
@@ -500,8 +570,11 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
   feature has.
   - **`list()` spreads `all()`, and that relationship is the whole mechanism.** The
     mutations invalidate `all()`; the readers read `list()`. React Query matches a key by
-    prefix, so one invalidation clears every variant — every sort today, a
-    `detail(id)` later — without a mutation being touched.
+    prefix, so one invalidation clears every variant — every sort **and every page**, a
+    `detail(id)` later — without a mutation being touched. Pagination is what made that
+    stop being a nicety on the roster: a created account lands on the last page, so an
+    invalidation that reached only the page on screen would leave every other page
+    holding rows from before.
   - **It is guarded by a test, because nothing else could see it.** Before the split, the
     read key and the invalidated key were the same array and could not drift. Afterwards
     they are two values related only by prefix: measured on 2026-11-14, making `list()`
@@ -510,6 +583,11 @@ Shared, monorepo-level rules live in [`../CLAUDE.md`](../CLAUDE.md).
     `api/query-key.test.ts` in each feature now closes that, asserted through a real
     `QueryClient` rather than by comparing array prefixes by hand — the rule under test is
     React Query's matching, not ours.
+  - **Both list keys carry the whole query — the sort, the filters and the page** —
+    because the server decides all three. `userKeys.list()` took no argument at all until
+    2026-11-21; it takes `{ page }` now, for the same reason the ticket key has always
+    carried its sort: page 2 is a different answer from page 1, so it has to be a
+    different entry, or one cache row would serve both.
   - **A ticket list key carries the sort** (`["tickets", "list", { sortBy, sortOrder }]`),
     because the server decides the order, so each sort is a different answer and a
     different cache entry. The query object goes in as **one element** rather than spread
@@ -568,8 +646,12 @@ components/ lib/ test/  →  nothing above them
   not created until something goes in them.** `features/tickets/hooks/` was created on
   2026-11-13 by that same rule, once `useTicketSort` existed: it owns logic that can be
   wrong on its own and a test aims straight at it, which is two of the five questions in
-  the root [`../CLAUDE.md`](../CLAUDE.md) answered yes. `features/users/` still has no
-  `hooks/`. `api/` was created on 2026-10-23, by
+  the root [`../CLAUDE.md`](../CLAUDE.md) answered yes. **`features/users/hooks/` was
+  created on 2026-11-21 by the same rule**, once `useUserListQuery` existed — and it is
+  the weaker of the two cases, which is worth saying: the hook owns one parameter and no
+  reset rule, so what earns it the folder is having a home for `?page=` at all rather
+  than logic a test aims at. The tests that reach it are `UsersPage.test.tsx`'s two URL
+  cases, not a file of its own. `api/` was created on 2026-10-23, by
   decision, once `PATCH` made it three endpoints — `get-users.ts`, `create-user.ts`,
   `update-user.ts` plus the shared `query-key.ts`. The shape is bulletproof-react's:
   one file per endpoint, named for it.
@@ -582,6 +664,23 @@ components/ lib/ test/  →  nothing above them
   form had to restate the three fields it needed. With the type in `api/get-users.ts`
   that becomes `Pick<UserRow, "id" | "name" | "email">`, and the roster's shape reaches
   the form instead of drifting past it.
+- **`useUserListQuery` is a copy of `useTicketListQuery`'s shape, deliberately**
+  (2026-11-21). The two read `?page=`, build a `pagination`, resolve TanStack's updater
+  and rebuild the URL the same way — about fifteen lines of shape. They are kept apart on
+  the rule that always decides it here: **must the copies change together?** They must
+  not. The ticket hook owns a sort, three filters and the `page: 1` reset those two
+  setters need; the roster hook owns one parameter and explicitly has no reset, because
+  nothing on `/users` narrows the list. A filter or a sort arriving at one list says
+  nothing about the other — the same test that refused a shared `DataTable`. A generic
+  hook would also need the schema *and* a "write the rest of the query" callback injected,
+  because `toSearchParams` differs in five of its six lines: a guessed API for two
+  callers.
+  **What genuinely is one rule is the 1-based URL ↔ 0-based `pageIndex` conversion**,
+  which now appears four times and has to agree with the server's `(page - 1) * PAGE_SIZE`.
+  Today all four are identical and `PAGE_SIZE` is already shared, so there is nothing to
+  drift. **Trigger: a third list, or the roster growing a search box** — at that point the
+  reset rule becomes real logic in two places rather than shape, and a `usePageSearchParam`
+  in `lib/` would earn its API from three callers' evidence instead of a guess.
 - **The direction is a hard gate, not a guideline.** `.oxlintrc.json` has two
   `overrides` zones running `no-restricted-imports`: one stops `src/features/**` from
   importing another feature or a page, the other stops `src/components/**`, `src/lib/**`
