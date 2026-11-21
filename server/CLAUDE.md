@@ -416,6 +416,70 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
     create a new one. **That branch has no test**, because nothing can resolve a ticket
     yet — no `PATCH` endpoint, and the specs reach the database only over HTTP. Written
     into the spec file as a comment rather than left as a silent hole.
+- **`bodyHtml` is sanitised on write, into a second column** (2026-11-21), and the two
+  columns are the decision rather than the library. `bodyHtml` keeps exactly what
+  arrived; `bodyHtmlSanitized` is what `src/tickets/sanitize-body-html.ts` derives from
+  it with DOMPurify, and **it is the only one any later consumer may read** — the detail
+  page, a digest, an AI prompt. The raw column may be rendered nowhere; the webhook's
+  own answer echoes it back to the caller that just sent it, which adds no reach and is
+  what lets a spec prove it was not sanitised in place.
+  - **The reference project does the opposite half**: `DOMPurify.sanitize()` inside the
+    component's `dangerouslySetInnerHTML` (`ed22c0f`), client-side only. That works and
+    is one line, but it makes safety a thing every future consumer has to remember.
+    Writing a derived column makes "forgot to sanitise" unavailable instead. The render
+    half is still worth having on top and lands with the detail page — this is defence
+    in depth, not a replacement.
+  - **DOMPurify needs a DOM on the server, so `jsdom` is now in the server's runtime
+    path** rather than only in the client's test tooling. **Keep jsdom current and do not
+    swap it for `happy-dom`** — the reasons are DOMPurify's own and are quoted in
+    `sanitize-body-html.ts` beside the import they constrain, rather than copied here.
+    The high `undici` advisories underneath jsdom are not reachable: measured against a
+    probe server on 2026-11-21, sanitising payloads full of remote `src`/`href`/`@import`
+    produced zero outbound requests.
+  - **The defaults are used as they come**, no hand-written `ALLOWED_TAGS`. The library's
+    allow-list has been attacked for a decade; a narrower list invented here would be one
+    this project has no evidence for and would have to maintain. Four specs hold both
+    directions: a `<script>`, an `onerror` and a `javascript:` URL are gone from the
+    derived column while the raw one keeps them, and ordinary markup (`<b>`, a real
+    `href`) survives — that last one is what fails if somebody "hardens" it into
+    stripping everything.
+    **The two directions overlap rather than partitioning the specs, and this line said
+    otherwise until it was re-measured:** skipping the sanitiser turns exactly the three
+    dangerous specs red, while `ALLOWED_TAGS: []` turns **four** red — the ordinary-markup
+    one, both of the first two, and the plain `<p>hello</p>` assertion in the describe
+    above. The `javascript:` one stays green under it.
+    **What the defaults drop that a reader will not expect:** `<style>` blocks and
+    `<head>`. Tables, lists, links, images and inline `style` attributes survive, so a
+    mail's own stylesheet is gone by the time the detail page reads this column — that is
+    typography for the page to solve, not a sanitiser setting to loosen into
+    `ADD_TAGS: ["style"]`.
+  - **It is the slow part of the request, and the cap on `bodyHtml` is why.**
+    `sanitizeBodyHtml` parses and re-serialises synchronously on the one thread the server
+    has, so its cost is time every other caller waits. Found by `security-reviewer` on
+    2026-11-21 as a DoS this work introduced: before it, the handler did a bounded insert.
+    **The cost tracks nesting depth, not length** — measured, 6000 flat `<p>` paragraphs
+    (375 KiB) sanitise in 66ms while 2000 nested `<div>`s (9.8 KiB) take 96ms and 4000
+    throw `RangeError` out of parse5 after 463ms. So `BODY_HTML_MAX_LENGTH` (64 KiB) is a
+    **ceiling on the worst case, not a fix for it**: no length that allows ordinary mail
+    can make the pathological shape fast. What bounds it properly is the rate limit the
+    root `CLAUDE.md` already owes this route, and the measurements plus the rejected
+    alternative (a hand-written depth check) are in the constant's own comment.
+  - **The allow-list constant is `WEBHOOK_ANSWER_FIELDS`**, renamed from
+    `PUBLIC_TICKET_FIELDS` on 2026-11-21: it selects the raw `bodyHtml`, which may be
+    rendered nowhere, and "public" reads as an invitation to reuse it for an answer it was
+    not written for.
+  - **The rule that only the derived column may be read is a convention, not an
+    enforcement**, and the module's comment claimed otherwise until it was measured. The
+    one check that exists is `e2e/tickets-api.spec.ts` asserting no row of
+    `GET /api/tickets` carries `bodyHtml`; a `GET /api/tickets/:id` that selected it would
+    pass every gate. Worth a spec the day that endpoint exists.
+  - **Rows written before this hold `null`** in the derived column and no backfill was
+    written: the dev database is disposable (`db:reseed:tickets`) and the test database
+    truncates per run. A real deployment needs one.
+  - **What it does not address: prompt injection.** `<div style="display:none">ignore
+    previous instructions…</div>` is valid, inert markup that survives any HTML
+    sanitiser and a human reader, and Phase 5 feeds this text to a model. Tracked in the
+    root `CLAUDE.md`'s Known gaps, not solved here.
 - **No `messageId` column.** It would make a retried delivery idempotent and would be
   the basis for real RFC 5322 threading, but nothing sends a message id to this endpoint
   today, so it would be a column nothing fills. It lands with the mail provider, which
@@ -423,7 +487,7 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
 - **No try/catch in the handler.** `ticket` carries no unique constraint and the body
   carries no foreign key, so there is no Prisma error worth a different status code, and
   Express 5 forwards a rejection on its own.
-- **`PUBLIC_TICKET_FIELDS` is the allow-list the *webhook's* answers select** — it was
+- **`WEBHOOK_ANSWER_FIELDS` is the allow-list the *webhook's* answers select** — it was
   "every answer" until `GET /api/tickets` arrived with its own, narrower one. `updatedAt`
   and `subjectNormalized` are left out of it deliberately: keeping a real column outside
   the list is what gives the specs' sorted-key-set assertion teeth. Drop the `select` and
@@ -449,8 +513,8 @@ Nobody should "fix" that route by adding `requireAuth`; it would refuse every de
   route file that is its only reader. `e2e/tickets-api.spec.ts` hand-writes the field
   array it asserts, which is what makes reusing the wrong constant go red — a spec that
   imported the value under test could not notice the server reading the wrong one.
-  **Move both into `src/tickets/ticket-fields.ts`, renaming `PUBLIC_TICKET_FIELDS` in the
-  same go, the day `GET /api/tickets/:id` wants the full shape** — a genuine second
+  **Move both into `src/tickets/ticket-fields.ts` the day `GET /api/tickets/:id` wants
+  the full shape** — a genuine second
   reader across files is the trigger, not a line count.
 - **`?sortBy=` and `?sortOrder=` are the app's first query parameters** (2026-11-13),
   joined by `?search=`, `?status=` and `?category=` on 2026-11-19 — see
@@ -699,9 +763,10 @@ production; `.env.test` sets `NODE_ENV=test` so E2E runs don't hit 429s.
   `prisma/seed.ts`), `update-user.ts` (the profile/password write behind `PATCH`)
   and `delete-user.ts` (the soft delete behind `DELETE`)
 - `src/tickets/` — the tickets module: `inbound-email.routes.ts` (the webhook's router,
-  request schema, duplicate guard and field allow-list, all in one file) and
-  `tickets.routes.ts` (`GET /api/tickets` and its own narrower allow-list) — see
-  **Module layout** for why the two are separate files
+  request schema, duplicate guard and field allow-list, all in one file),
+  `tickets.routes.ts` (`GET /api/tickets` and its own narrower allow-list) and
+  `sanitize-body-html.ts` (the one reader of the raw `bodyHtml`) — see
+  **Module layout** for why the routers are separate files
 - `src/auth.ts` — better-auth config · `src/require-auth.ts` — session guard
   · `src/require-admin.ts` — role guard · `src/require-webhook-secret.ts` — shared-secret
   guard for the one caller that is not a person
