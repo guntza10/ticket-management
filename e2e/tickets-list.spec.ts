@@ -22,6 +22,28 @@ function subjectCell(page: Page, subject: string) {
     .getByRole("cell", { name: subject, exact: true });
 }
 
+/**
+ * Narrows the list to the one ticket this spec created, by typing its subject
+ * into the search box.
+ *
+ * **Pagination is what made this necessary (2026-11-21).** `GET /api/tickets`
+ * answers ten rows at a time, newest first, so a posted ticket is on page one
+ * only while fewer than ten newer ones exist — and a run creates about ninety
+ * across five workers. Measured: `Ticket ui-admin` ended a full run at position
+ * 29, on page three, so `toBeVisible()` on an unfiltered list had stopped being
+ * a statement about the app and become a statement about who posted last.
+ *
+ * The subject is unique per spec (`newSubject`), so searching for it leaves one
+ * row — which is the same trick `tickets-filter.spec.ts` and
+ * `tickets-pagination.spec.ts` use, and the only one available on a list whose
+ * order five workers are changing.
+ */
+async function searchForSubject(page: Page, subject: string) {
+  await page
+    .getByRole("textbox", { name: "Search tickets" })
+    .fill(subject);
+}
+
 // Every ticket these tests read is created over HTTP first, through the same
 // webhook a mail provider would call, because that endpoint is a ticket's only
 // writer — there is no POST /api/tickets and no UI that creates one. Seeding it
@@ -41,6 +63,11 @@ test.describe("Ticket list", () => {
     // signed-in role works tickets. Moving it inside is invisible to tsc and to
     // oxlint, so this click is what notices.
     await page.getByRole("link", { name: "Tickets" }).click();
+
+    // Narrowed to this spec's own ticket *after* the click, so the click is
+    // still what proves the nav link works. See searchForSubject above for why
+    // the unfiltered list can no longer be asserted on.
+    await searchForSubject(page, email.subject);
 
     // And the route carries no `role` prop, unlike /users. Note which line
     // below actually proves that: adding role="admin" to /tickets was measured
@@ -70,7 +97,10 @@ test.describe("Ticket list", () => {
     await sendEmailExpectingNewTicket(request, email);
 
     await signIn(page, AGENT);
-    await page.goto("/tickets");
+    // Straight to a filtered URL rather than typing, because this test is not
+    // about the toolbar: `?search=` is a parameter the page reads on load, so
+    // one navigation puts the row on screen with no debounce to wait out.
+    await page.goto(`/tickets?search=${encodeURIComponent(email.subject)}`);
 
     // Assert the row arrived *first*. Without it, "the body is nowhere" would
     // also hold on a blank page, which is the one way this test could pass
@@ -95,6 +125,8 @@ test.describe("Ticket list", () => {
     await page.getByRole("link", { name: "Tickets" }).click();
 
     await expect(page).toHaveURL("/tickets");
+
+    await searchForSubject(page, email.subject);
     await expect(subjectCell(page, email.subject)).toBeVisible();
   });
 });

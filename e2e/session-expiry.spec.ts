@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { ADMIN, signIn, signInViaApi } from "./support/auth";
-import { createUserViaApi } from "./support/users";
+import { createUserViaApi, gotoRosterPageFor } from "./support/users";
 
 // The 401 interceptor in client/src/lib/api.ts, in a real browser.
 //
@@ -36,7 +36,9 @@ test.describe("Session expiry", () => {
     const created = await createUserViaApi(request, "session-expiry");
 
     await signIn(page, ADMIN);
-    await page.goto("/users");
+    // Not a bare /users: the roster shows ten rows at a time, oldest first, so
+    // the row created above is on the last page.
+    await gotoRosterPageFor(page, request, created.email);
     await expect(
       page.getByRole("cell", { name: created.email, exact: true }),
     ).toBeVisible();

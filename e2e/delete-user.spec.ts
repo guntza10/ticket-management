@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { ADMIN, signIn, signInViaApi } from "./support/auth";
-import { createUserViaApi } from "./support/users";
+import { createUserViaApi, gotoRosterPageFor } from "./support/users";
 
 /**
  * Finds a row by its **email** cell, which is the one field nothing in this
@@ -63,7 +63,9 @@ test.describe("Delete user", () => {
   }) => {
     const created = await createUserViaApi(request, "delete-row");
 
-    await page.goto("/users");
+    // The roster is paginated and ordered oldest-first, so a row created a
+    // moment ago is on the last page, not the first. See gotoRosterPageFor.
+    await gotoRosterPageFor(page, request, created.email);
     const row = rowByEmail(page, created.email);
     await expect(row).toBeVisible();
 
@@ -97,7 +99,7 @@ test.describe("Delete user", () => {
   }) => {
     const created = await createUserViaApi(request, "delete-cancel");
 
-    await page.goto("/users");
+    await gotoRosterPageFor(page, request, created.email);
     const row = rowByEmail(page, created.email);
     await expect(row).toBeVisible();
 
@@ -131,7 +133,7 @@ test.describe("Delete user", () => {
     try {
       await signIn(agentPage, created);
 
-      await page.goto("/users");
+      await gotoRosterPageFor(page, request, created.email);
       const dialog = await openDeleteDialog(page, created.name);
       await dialog.getByRole("button", { name: "Delete", exact: true }).click();
       await expect(dialog).toBeHidden();

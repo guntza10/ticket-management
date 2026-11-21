@@ -1,6 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
-import { ADMIN, signIn } from "./support/auth";
-import { NEW_USER_PASSWORD, newUserEmail } from "./support/users";
+import { ADMIN, signIn, signInViaApi } from "./support/auth";
+import {
+  NEW_USER_PASSWORD,
+  newUserEmail,
+  readAllUserEmails,
+} from "./support/users";
 
 /**
  * Opens the dialog, fills it, submits, and hands back the dialog so the caller
@@ -33,28 +37,62 @@ async function submitCreateUser(page: Page, user: { name: string; email: string 
 // owns that, once per run. Every address therefore comes from newUserEmail(),
 // because five workers share one database. See support/users.ts.
 test.describe("Create user", () => {
-  test("an admin creates an agent and the row appears without a reload", async ({
+  // **This test asserted the new row on screen until 2026-11-21, and pagination
+  // made that claim false rather than flaky.** The roster shows ten rows at a
+  // time ordered oldest-first, so an account created now lands on the *last*
+  // page: the invalidation refetches the page the admin is looking at, and the
+  // new row is not in it. The test passed until then only because its own row
+  // happened to be among the ten oldest, which depended on which worker got
+  // there first.
+  //
+  // So the claim is written the way the app actually behaves: creating closes
+  // the dialog, refetches the roster **without any navigation**, and really
+  // writes the account. That the row renders correctly once it is in the
+  // answer is `UsersTable.test.tsx`'s job, and the shape of the written row is
+  // `users-api.spec.ts`'s.
+  //
+  // What is lost is worth stating: nothing in the browser now proves the admin
+  // *sees* the account they just made — because they do not. That is recorded
+  // as a gap in the root CLAUDE.md, with a search box as the fix.
+  test("an admin creates an agent, and the roster refetches with no reload", async ({
     page,
+    request,
   }) => {
+    // Every GET the page makes to the roster endpoint, in order. A `request`
+    // listener rather than a count of responses: what is being proven is that
+    // the app *asked* again, which is what invalidating a query key does.
+    const rosterRequests: string[] = [];
+    page.on("request", (sent) => {
+      if (sent.method() === "GET" && sent.url().includes("/api/users")) {
+        rosterRequests.push(sent.url());
+      }
+    });
+
     await signIn(page, ADMIN);
     await page.goto("/users");
+    // The first load has to have landed before the count below means anything.
+    await expect(page.getByRole("table")).toBeVisible();
+    const requestsBeforeCreate = rosterRequests.length;
 
     const email = newUserEmail("ui-create");
     const dialog = await submitCreateUser(page, { name: "New Hire", email });
 
+    // The dialog closes only after the refetch settles — CreateUserForm returns
+    // the invalidation from onSuccess — so this is the first half of the claim.
     await expect(dialog).toBeHidden();
 
-    // There is deliberately no page.reload() above. The row can only be on
-    // screen because the mutation invalidated the ["users"] query — drop that
-    // and this is the test that notices.
-    const row = page.getByRole("row").filter({ hasText: email });
-    await expect(
-      row.getByRole("cell", { name: "New Hire", exact: true }),
-    ).toBeVisible();
-    // exact, so a name cell containing the word would not satisfy it.
-    await expect(
-      row.getByRole("cell", { name: "agent", exact: true }),
-    ).toBeVisible();
+    // And this is the half that cannot be inferred from the screen: a second
+    // GET, with no reload and no navigation between the POST and it. Drop the
+    // `invalidateQueries` call, or name a different key in it, and this is the
+    // assertion that notices.
+    await expect
+      .poll(() => rosterRequests.length)
+      .toBeGreaterThan(requestsBeforeCreate);
+
+    // The account is really there, wherever the roster's order puts it. Read
+    // over every page, because "the last page" is exactly where it is.
+    await signInViaApi(request, ADMIN);
+    expect(await readAllUserEmails(request)).toContain(email);
   });
 
   test("shows a taken address inline and keeps a single dialog open", async ({
@@ -88,8 +126,12 @@ test.describe("Create user", () => {
     await page.goto("/users");
 
     const email = newUserEmail("ui-signs-in");
-    await submitCreateUser(page, { name: "Fresh Hire", email });
-    await expect(page.getByRole("cell", { name: email })).toBeVisible();
+    const dialog = await submitCreateUser(page, { name: "Fresh Hire", email });
+    // The dialog closing is what says the create succeeded. The row is **not**
+    // asserted on screen: the roster is paginated oldest-first, so a brand new
+    // account is on the last page — and the sign-in below is a stronger proof
+    // that the account exists than a cell would be anyway.
+    await expect(dialog).toBeHidden();
 
     await page.getByRole("button", { name: "Log out" }).click();
     await expect(page).toHaveURL("/login");

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { ADMIN, signIn, signInViaApi } from "./support/auth";
-import { createUserViaApi } from "./support/users";
+import { createUserViaApi, gotoRosterPageFor } from "./support/users";
 
 /**
  * Opens the edit dialog from a given row's pencil and hands the dialog back.
@@ -44,17 +44,29 @@ test.describe("Edit user", () => {
     page,
     request,
   }) => {
-    // Two rows, and the second one is the one edited — with a single row on
-    // screen a dialog that read the wrong row would still look right.
-    const first = await createUserViaApi(request, "pick-first");
+    // More than one row has to be on screen, or a dialog that read the wrong
+    // row would still look right. Pagination made that harder than it sounds:
+    // the roster shows ten rows at a time, so two rows created back to back can
+    // land either side of a page boundary.
+    //
+    // **Three consecutive rows, and the middle one is the one edited.** A page
+    // boundary can fall before it or after it, but not both, so the middle row
+    // always shares its page with at least one of its neighbours — which is the
+    // only thing this test needs and is true without asking where the boundary
+    // fell.
+    await createUserViaApi(request, "pick-first");
     const second = await createUserViaApi(request, "pick-second");
+    await createUserViaApi(request, "pick-third");
 
-    await page.goto("/users");
-    // Both triggers really are on the page, so picking between them is a choice
-    // the component had to make.
+    await gotoRosterPageFor(page, request, second.email);
+
+    // Some other row's pencil really is on the page beside this one's, so
+    // picking between them is a choice the component had to make. Which
+    // neighbour it is depends on the page boundary, so the assertion counts
+    // triggers rather than naming one.
     await expect(
-      page.getByRole("button", { name: `Edit ${first.name}`, exact: true }),
-    ).toBeVisible();
+      page.getByRole("button", { name: /^Edit / }),
+    ).not.toHaveCount(1);
 
     const dialog = await openEditDialog(page, second.name);
 
@@ -80,7 +92,7 @@ test.describe("Edit user", () => {
     const created = await createUserViaApi(request, "rename");
     const editedName = `${created.name} Edited`;
 
-    await page.goto("/users");
+    await gotoRosterPageFor(page, request, created.email);
     const dialog = await openEditDialog(page, created.name);
 
     await dialog.getByLabel("Name").fill(editedName);
@@ -107,7 +119,7 @@ test.describe("Edit user", () => {
   }) => {
     const created = await createUserViaApi(request, "dirty");
 
-    await page.goto("/users");
+    await gotoRosterPageFor(page, request, created.email);
     const dialog = await openEditDialog(page, created.name);
 
     const save = dialog.getByRole("button", { name: "Save", exact: true });
@@ -130,7 +142,7 @@ test.describe("Edit user", () => {
   }) => {
     const created = await createUserViaApi(request, "duplicate");
 
-    await page.goto("/users");
+    await gotoRosterPageFor(page, request, created.email);
     const dialog = await openEditDialog(page, created.name);
 
     // The seeded admin already owns this address, and this test only reads it —
