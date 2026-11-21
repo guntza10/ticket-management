@@ -12,6 +12,7 @@ import {
   createUserViaApi,
   NEW_USER_PASSWORD,
   newUserEmail,
+  readAllUsers,
 } from "./support/users";
 
 // Its own file for the same reason editing got one: a third verb in
@@ -72,12 +73,11 @@ test.describe("Users API — deleting", () => {
     const created = await createUserViaApi(request, "delete-still-listed");
     await request.delete(`${API_URL}/api/users/${created.id}`);
 
-    const roster = await request.get(`${API_URL}/api/users`);
-    const { users } = (await roster.json()) as {
-      users: { email: string; deletedAt: string | null }[];
-    };
+    const users = await readAllUsers(request);
 
     // By address, never by index or count — five workers share this database.
+    // Every page, because the deleted row stays on the roster and sits wherever
+    // its creation time puts it, which for a row this test just made is last.
     const row = users.find((u) => u.email === created.email);
     expect(row, "the deleted user should still be in the roster").toBeDefined();
     expect(row?.deletedAt).not.toBeNull();
@@ -116,10 +116,7 @@ test.describe("Users API — deleting", () => {
 
   test("DELETE /api/users/:id is 403 for an admin", async ({ request }) => {
     await signInViaApi(request, ADMIN);
-    const roster = await request.get(`${API_URL}/api/users`);
-    const { users } = (await roster.json()) as {
-      users: { id: string; email: string }[];
-    };
+    const users = await readAllUsers(request);
     // By address, because position says nothing in a shared database.
     const admin = users.find((u) => u.email === ADMIN.email);
 

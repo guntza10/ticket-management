@@ -10,6 +10,7 @@ import {
   ALLOWED_FIELDS,
   NEW_USER_PASSWORD,
   newUserEmail,
+  readAllUserEmails,
 } from "./support/users";
 
 test.describe("Users API — authorization", () => {
@@ -102,10 +103,10 @@ test.describe("Users API — creating", () => {
       role: "agent",
     });
 
-    // Really in the roster, not merely echoed back by the handler.
-    const roster = await request.get(`${API_URL}/api/users`);
-    const { users } = (await roster.json()) as { users: { email: string }[] };
-    expect(users.map((u) => u.email)).toContain(storedEmail);
+    // Really in the roster, not merely echoed back by the handler. Read across
+    // every page: the roster is ordered `createdAt asc`, so the account this
+    // test just created is on the *last* page, never the first.
+    expect(await readAllUserEmails(request)).toContain(storedEmail);
 
     // Last step on purpose: signing in replaces the admin cookie on this
     // request context. Uses the address as typed — capitals and all — which is
@@ -225,9 +226,9 @@ test.describe("Users API — creating, rejected input", () => {
     expect(await response.json()).toEqual({ error: "invalid_body" });
 
     // A 400 that still wrote the row would be worse than no validation at all.
-    const roster = await request.get(`${API_URL}/api/users`);
-    const { users } = (await roster.json()) as { users: { email: string }[] };
-    expect(users.map((u) => u.email)).not.toContain(email);
+    // Across every page, because a `not.toContain` over one page of a paginated
+    // roster is the kind of assertion that passes without proving anything.
+    expect(await readAllUserEmails(request)).not.toContain(email);
   });
 
   test("POST /api/users is 400 for a malformed email", async ({ request }) => {

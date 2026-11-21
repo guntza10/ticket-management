@@ -6,7 +6,12 @@ import {
   CLIENT_ORIGIN,
   signInViaApi,
 } from "./support/auth";
-import { ALLOWED_FIELDS, createUserViaApi, newUserEmail } from "./support/users";
+import {
+  ALLOWED_FIELDS,
+  createUserViaApi,
+  newUserEmail,
+  readAllUserEmails,
+} from "./support/users";
 
 // Split out of users-api.spec.ts rather than appended to it: that file covers
 // who may read the roster and what a create refuses, and adding editing to it
@@ -63,11 +68,12 @@ test.describe("Users API — editing", () => {
     expect(user.name).toBe("Edited Name");
     expect(user.email).toBe(newEmail);
 
-    // And it is really stored, not just echoed back.
-    const roster = await request.get(`${API_URL}/api/users`);
-    const { users } = (await roster.json()) as { users: { email: string }[] };
-    expect(users.map((u) => u.email)).toContain(newEmail);
-    expect(users.map((u) => u.email)).not.toContain(created.email);
+    // And it is really stored, not just echoed back. Across every page, since
+    // the roster is paginated and this row was created moments ago — which puts
+    // it on the last page of an ascending order, not the first.
+    const emails = await readAllUserEmails(request);
+    expect(emails).toContain(newEmail);
+    expect(emails).not.toContain(created.email);
   });
 
   // The same correctness rule POST has: /sign-in/email looks a user up by

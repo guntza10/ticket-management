@@ -9,7 +9,7 @@ import {
   createTicketWithSubject,
   newSearchToken,
   readTicketIds,
-  readTicketList,
+  readAllTickets,
   TICKETS_URL,
 } from "./support/tickets";
 
@@ -394,7 +394,7 @@ test.describe("Tickets API — what filtering refuses and accepts", () => {
     await createTicketWithSubject(request, "filter-fields", `Fields ${token}`);
 
     await signInViaApi(request, AGENT);
-    const tickets = await readTicketList(request, {
+    const tickets = await readAllTickets(request, {
       search: token,
       status: "open",
     });

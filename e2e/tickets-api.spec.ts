@@ -9,7 +9,7 @@ import {
 // off the server's own constant.
 import {
   ALLOWED_TICKET_LIST_FIELDS,
-  readTicketList,
+  readAllTickets,
   TICKETS_URL,
 } from "./support/tickets";
 
@@ -31,7 +31,7 @@ test.describe("Tickets API — who may read the list", () => {
     const created = await sendEmailExpectingNewTicket(request, email);
 
     await signInViaApi(request, AGENT);
-    const tickets = await readTicketList(request);
+    const tickets = await readAllTickets(request);
 
     // Identity by id, never by position or count: five workers share one
     // database that is truncated once per run, so every other spec's tickets
@@ -44,7 +44,7 @@ test.describe("Tickets API — who may read the list", () => {
     const created = await sendEmailExpectingNewTicket(request, email);
 
     await signInViaApi(request, ADMIN);
-    const tickets = await readTicketList(request);
+    const tickets = await readAllTickets(request);
 
     expect(tickets.map((ticket) => ticket.id)).toContain(created.id);
   });
@@ -58,7 +58,7 @@ test.describe("Tickets API — what the list returns", () => {
     await sendEmailExpectingNewTicket(request, email);
 
     await signInViaApi(request, AGENT);
-    const tickets = await readTicketList(request);
+    const tickets = await readAllTickets(request);
 
     // Every row, not a sample: the allow-list has to hold for all of them.
     for (const ticket of tickets) {
@@ -75,7 +75,7 @@ test.describe("Tickets API — what the list returns", () => {
     await sendEmailExpectingNewTicket(request, email);
 
     await signInViaApi(request, AGENT);
-    const tickets = await readTicketList(request);
+    const tickets = await readAllTickets(request);
 
     for (const ticket of tickets) {
       expect(ticket).not.toHaveProperty("body");
@@ -106,7 +106,7 @@ test.describe("Tickets API — what the list returns", () => {
     );
 
     await signInViaApi(request, AGENT);
-    const ids = (await readTicketList(request)).map((ticket) => ticket.id);
+    const ids = (await readAllTickets(request)).map((ticket) => ticket.id);
 
     expect(ids).toContain(older.id);
     expect(ids).toContain(newer.id);
@@ -120,6 +120,8 @@ test.describe("Tickets API — sorting the list", () => {
   // only assertable claim is where these two sit relative to each other — the
   // same rule every other ticket spec follows.
   async function createBracketingSubjects(request: APIRequestContext) {
+    // The token goes into both subjects, and since 2026-11-21 it is also what
+    // the reads below filter by — see the comment on each.
     const run = crypto.randomUUID();
     const first = await sendEmailExpectingNewTicket(request, {
       ...newInboundEmail("sort-subject-a"),
@@ -130,17 +132,35 @@ test.describe("Tickets API — sorting the list", () => {
       subject: `ZZZ sorting ${run}`,
     });
 
-    return { first, last };
+    return { first, last, run };
   }
 
+  // **Filtered by this test's own token, and that is load-bearing since the list
+  // was paginated (2026-11-21).** `readAllTickets` pages through the whole
+  // answer, and its own note explains that a concurrent insert can duplicate a
+  // row but not hide one — which is true of the *default* order and false here:
+  // another worker's ticket can sort *between* two rows already collected and
+  // push an unread row backwards over a page boundary, so it is never read.
+  // `indexOf` then answers `-1`, and `-1 < 4` is true, so the test would pass
+  // while proving nothing. `search` narrows the answer to the two rows this
+  // test created, which is one page and cannot straddle anything.
+  //
+  // The `toContain` pair in front of the comparison is the second half of that:
+  // it is what tells "sorted the wrong way" apart from "row never arrived".
   test("sorts by subject ascending when asked", async ({ request }) => {
-    const { first, last } = await createBracketingSubjects(request);
+    const { first, last, run } = await createBracketingSubjects(request);
 
     await signInViaApi(request, AGENT);
     const ids = (
-      await readTicketList(request, { sortBy: "subject", sortOrder: "asc" })
+      await readAllTickets(request, {
+        sortBy: "subject",
+        sortOrder: "asc",
+        search: run,
+      })
     ).map((ticket) => ticket.id);
 
+    expect(ids).toContain(first.id);
+    expect(ids).toContain(last.id);
     expect(ids.indexOf(first.id)).toBeLessThan(ids.indexOf(last.id));
   });
 
@@ -148,13 +168,19 @@ test.describe("Tickets API — sorting the list", () => {
   // ignored `sortOrder` entirely and always sorted ascending would pass the
   // test above.
   test("sorts by subject descending when asked", async ({ request }) => {
-    const { first, last } = await createBracketingSubjects(request);
+    const { first, last, run } = await createBracketingSubjects(request);
 
     await signInViaApi(request, AGENT);
     const ids = (
-      await readTicketList(request, { sortBy: "subject", sortOrder: "desc" })
+      await readAllTickets(request, {
+        sortBy: "subject",
+        sortOrder: "desc",
+        search: run,
+      })
     ).map((ticket) => ticket.id);
 
+    expect(ids).toContain(first.id);
+    expect(ids).toContain(last.id);
     expect(ids.indexOf(last.id)).toBeLessThan(ids.indexOf(first.id));
   });
 
@@ -175,10 +201,19 @@ test.describe("Tickets API — sorting the list", () => {
     });
 
     await signInViaApi(request, AGENT);
+    // Narrowed by the run token like the two subject tests above, and it works
+    // here for free: `?search=` matches senderName as well as the subject, and
+    // the token is in both sender names.
     const ids = (
-      await readTicketList(request, { sortBy: "senderName", sortOrder: "asc" })
+      await readAllTickets(request, {
+        sortBy: "senderName",
+        sortOrder: "asc",
+        search: run,
+      })
     ).map((ticket) => ticket.id);
 
+    expect(ids).toContain(first.id);
+    expect(ids).toContain(last.id);
     expect(ids.indexOf(first.id)).toBeLessThan(ids.indexOf(last.id));
   });
 
@@ -194,7 +229,7 @@ test.describe("Tickets API — sorting the list", () => {
 
     await signInViaApi(request, AGENT);
     const ids = (
-      await readTicketList(request, { sortBy: "createdAt", sortOrder: "asc" })
+      await readAllTickets(request, { sortBy: "createdAt", sortOrder: "asc" })
     ).map((ticket) => ticket.id);
 
     expect(ids.indexOf(older.id)).toBeLessThan(ids.indexOf(newer.id));
@@ -211,7 +246,7 @@ test.describe("Tickets API — sorting the list", () => {
       await sendEmailExpectingNewTicket(request, newInboundEmail(`sort-${sortBy}`));
 
       await signInViaApi(request, AGENT);
-      const tickets = await readTicketList(request, { sortBy, sortOrder: "asc" });
+      const tickets = await readAllTickets(request, { sortBy, sortOrder: "asc" });
 
       for (const ticket of tickets) {
         expect(Object.keys(ticket).sort()).toEqual(ALLOWED_TICKET_LIST_FIELDS);
@@ -228,7 +263,7 @@ test.describe("Tickets API — sorting the list", () => {
     await sendEmailExpectingNewTicket(request, newInboundEmail("sorted-fields"));
 
     await signInViaApi(request, AGENT);
-    const tickets = await readTicketList(request, {
+    const tickets = await readAllTickets(request, {
       sortBy: "subject",
       sortOrder: "asc",
     });
